@@ -2,8 +2,6 @@ function Nuke() {
 
 }
 
-let a;
-const b = "single";
-var y = 2
+console.log('a')
 
 export { Nuke };

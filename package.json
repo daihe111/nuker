@@ -10,9 +10,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "precommit": "lint-staged"
   },
-  "gitHooks": {
-    "pre-commit": "lint-staged",
-    "commit-msg": "node scripts/verify-commit-msg.js"
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged",
+      "commit-msg": "node scripts/verify-commit-msg.js"
+    }
   },
   "lint-staged": {
     "*.js": [
@@ -48,6 +50,7 @@
     "babel-plugin-istanbul": "^6.0.0",
     "chalk": "^4.0.0",
     "eslint": "^6.8.0",
+    "eslint-plugin-flowtype": "^4.7.0",
     "husky": "^4.2.3",
     "lint-staged": "^10.1.2",
     "rollup": "^2.3.3",

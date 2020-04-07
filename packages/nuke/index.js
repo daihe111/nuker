@@ -3,6 +3,6 @@ function Nuke() {
 }
 
 let a;
-const b = 2;
+const b = "single";
 
 export { Nuke };

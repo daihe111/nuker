@@ -1,6 +1,6 @@
 {
   "name": "@nuker/component",
-  "version": "0.1.0-alpha",
+  "version": "0.1.1-alpha",
   "description": "@nuker/component",
   "main": "index.js",
   "module": "dist/componet.esm-bundler.js",

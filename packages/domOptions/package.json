@@ -1,6 +1,6 @@
 {
   "name": "@nuker/dom-options",
-  "version": "0.1.0-alpha",
+  "version": "0.1.1-alpha",
   "description": "@nuker/dom-options",
   "main": "index.js",
   "module": "dist/dom-options.esm-bundler.js",

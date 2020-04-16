@@ -1,6 +1,6 @@
 {
   "name": "@nuker/share",
-  "version": "0.1.0-alpha",
+  "version": "0.1.1-alpha",
   "description": "@nuker/share",
   "main": "index.js",
   "module": "dist/share.esm-bundler.js",

@@ -1,6 +1,6 @@
 {
   "name": "nuker",
-  "version": "0.1.0-alpha",
+  "version": "0.1.1-alpha",
   "description": "A reactive and quick mvvm-framework.",
   "main": "dist/nuker.runtime.common.js",
   "module": "dist/nuker.runtime.esm.js",

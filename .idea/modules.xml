@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/nuke.iml" filepath="$PROJECT_DIR$/.idea/nuke.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/nuker.iml" filepath="$PROJECT_DIR$/.idea/nuker.iml" />
     </modules>
   </component>
 </project>

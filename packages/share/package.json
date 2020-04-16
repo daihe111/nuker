@@ -1,10 +1,15 @@
 {
-  "name": "@nuke/share",
-  "version": "0.1.0",
-  "description": "",
+  "name": "@nuker/share",
+  "version": "0.1.0-alpha",
+  "description": "@nuker/share",
   "main": "index.js",
+  "module": "dist/share.esm-bundler.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daihe111/nuker.git"
   },
   "author": "Levi Dai",
   "license": "ISC"

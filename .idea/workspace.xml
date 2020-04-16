@@ -2,6 +2,14 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="3a8413fd-466a-4425-8232-5073288469f6" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/.name" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/packages/domOptions/index.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/packages/domOptions/package.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/packages/domOptions/src/operations.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/packages/share/src/utils.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/packages/vDom/src/hooks.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/packages/vDom/src/operations.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/packages/vDom/src/vNode.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../.babelrc" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/../.editorconfig" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/../.gitignore" beforeDir="false" />
@@ -25,9 +33,25 @@
       <change beforePath="$PROJECT_DIR$/../config/test.env.js" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/../index.html" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/../manifest.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.eslintrc.js" beforeDir="false" afterPath="$PROJECT_DIR$/.eslintrc.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/nuke.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/nuker.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/packages/share/util.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/component/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/packages/component/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/nodeOptions/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/packages/domOptions/src/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/nodeOptions/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/nodeOptions/src/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/packages/share/src/consts.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/nuke/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/packages/nuke/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/nuke/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/packages/nuke/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/share/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/packages/share/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/share/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/packages/share/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/share/src/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/packages/share/src/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/vDom/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/packages/vDom/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/vDom/src/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/packages/vDom/src/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rollup.config.js" beforeDir="false" afterPath="$PROJECT_DIR$/rollup.config.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/alias.js" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/../package.json" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/../src/App.vue" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/../src/apis/index.js" beforeDir="false" />
@@ -352,48 +376,33 @@
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/.eslintrc.js">
+        <entry file="file://$PROJECT_DIR$/packages/vDom/index.js">
+          <provider selected="true" editor-type-id="text-editor" />
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/packages/domOptions/index.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="756">
-              <caret line="28" column="30" selection-start-line="28" selection-start-column="30" selection-end-line="28" selection-end-column="30" />
+            <state>
+              <caret column="27" selection-start-column="27" selection-end-column="27" />
             </state>
           </provider>
         </entry>
       </file>
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/packages/share/index.js">
-          <provider selected="true" editor-type-id="text-editor" />
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/package.json">
+        <entry file="file://$PROJECT_DIR$/packages/domOptions/package.json">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="243">
-              <caret line="9" column="26" selection-start-line="9" selection-start-column="26" selection-end-line="9" selection-end-column="26" />
+            <state relative-caret-position="135">
+              <caret line="5" column="33" selection-start-line="5" selection-start-column="33" selection-end-line="5" selection-end-column="33" />
             </state>
           </provider>
         </entry>
       </file>
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/packages/share/src/index.js">
-          <provider selected="true" editor-type-id="text-editor" />
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/packages/component/index.js">
-          <provider selected="true" editor-type-id="text-editor" />
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/packages/component/src/index.js">
-          <provider selected="true" editor-type-id="text-editor" />
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/packages/component/package.json">
+        <entry file="file://$PROJECT_DIR$/packages/share/package.json">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="243">
-              <caret line="9" column="18" selection-start-line="9" selection-start-column="18" selection-end-line="9" selection-end-column="18" />
+            <state relative-caret-position="351">
+              <caret line="13" column="23" selection-start-line="13" selection-start-column="23" selection-end-line="13" selection-end-column="23" />
             </state>
           </provider>
         </entry>
@@ -401,17 +410,35 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/packages/nuke/package.json">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="108">
-              <caret line="4" column="21" selection-start-line="4" selection-start-column="21" selection-end-line="4" selection-end-column="21" />
+            <state relative-caret-position="81">
+              <caret line="3" column="28" selection-start-line="3" selection-start-column="28" selection-end-line="3" selection-end-column="28" />
             </state>
           </provider>
         </entry>
       </file>
-      <file pinned="false" current-in-tab="true">
-        <entry file="file://$PROJECT_DIR$/packages/vDom/src/index.js">
+      <file pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/packages/component/package.json">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="216">
-              <caret line="8" column="3" lean-forward="true" selection-start-line="8" selection-start-column="3" selection-end-line="8" selection-end-column="3" />
+            <state relative-caret-position="81">
+              <caret line="3" column="36" selection-start-line="3" selection-start-column="36" selection-end-line="3" selection-end-column="36" />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/packages/vDom/src/operations.js">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="432">
+              <caret line="16" column="1" selection-start-line="16" selection-start-column="1" selection-end-line="16" selection-end-column="1" />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/packages/domOptions/src/operations.js">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="162">
+              <caret line="6" column="35" lean-forward="true" selection-start-line="6" selection-start-column="35" selection-end-line="6" selection-end-column="35" />
             </state>
           </provider>
         </entry>
@@ -419,8 +446,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/rollup.config.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="567">
-              <caret line="21" column="45" selection-start-line="21" selection-start-column="45" selection-end-line="21" selection-end-column="45" />
+            <state relative-caret-position="378">
+              <caret line="16" column="20" selection-start-line="16" selection-start-column="20" selection-end-line="16" selection-end-column="20" />
               <folding>
                 <element signature="e#0#24#0" expanded="true" />
               </folding>
@@ -428,7 +455,28 @@
           </provider>
         </entry>
       </file>
+      <file pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/package.json">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="432">
+              <caret line="25" column="47" selection-start-line="25" selection-start-column="47" selection-end-line="25" selection-end-column="47" />
+            </state>
+          </provider>
+        </entry>
+      </file>
     </leaf>
+  </component>
+  <component name="FindInProjectRecents">
+    <findStrings>
+      <find>0.1.0</find>
+      <find>,</find>
+      <find>0.1.0-alpha</find>
+      <find>nuke</find>
+    </findStrings>
+    <replaceStrings>
+      <replace>/</replace>
+      <replace>nuker</replace>
+    </replaceStrings>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -437,17 +485,32 @@
     <option name="CHANGED_PATHS">
       <list>
         <option value="$PROJECT_DIR$/src/index.js" />
-        <option value="$PROJECT_DIR$/rollup.config.js" />
         <option value="$PROJECT_DIR$/.babelrc.js" />
         <option value="$PROJECT_DIR$/scripts/alias.js" />
         <option value="$PROJECT_DIR$/.gitignore" />
-        <option value="$PROJECT_DIR$/scripts/verify-commit-msg.js" />
         <option value="$PROJECT_DIR$/.eslintignore" />
-        <option value="$PROJECT_DIR$/package.json" />
-        <option value="$PROJECT_DIR$/packages/nuke/index.js" />
-        <option value="$PROJECT_DIR$/packages/nuke/package.json" />
         <option value="$PROJECT_DIR$/.eslintrc.js" />
+        <option value="$PROJECT_DIR$/packages/nodeOptions/package.json" />
+        <option value="$PROJECT_DIR$/scripts/verify-commit-msg.js" />
+        <option value="$PROJECT_DIR$/packages/vDom/src/vNodeOptions.js" />
+        <option value="$PROJECT_DIR$/packages/share/src/utils.js" />
+        <option value="$PROJECT_DIR$/packages/domOptions/index.js" />
+        <option value="$PROJECT_DIR$/packages/share/index.js" />
+        <option value="$PROJECT_DIR$/packages/vDom/src/operations.js" />
+        <option value="$PROJECT_DIR$/README.md" />
+        <option value="$PROJECT_DIR$/packages/nuke/index.js" />
+        <option value="$PROJECT_DIR$/rollup.config.js" />
+        <option value="$PROJECT_DIR$/package-lock.json" />
+        <option value="$PROJECT_DIR$/packages/domOptions/src/operations.js" />
+        <option value="$PROJECT_DIR$/packages/vDom/src/vNode.js" />
+        <option value="$PROJECT_DIR$/package.json" />
         <option value="$PROJECT_DIR$/packages/vDom/src/index.js" />
+        <option value="$PROJECT_DIR$/packages/share/src/index.js" />
+        <option value="$PROJECT_DIR$/packages/share/package.json" />
+        <option value="$PROJECT_DIR$/packages/vDom/package.json" />
+        <option value="$PROJECT_DIR$/packages/nuke/package.json" />
+        <option value="$PROJECT_DIR$/packages/domOptions/package.json" />
+        <option value="$PROJECT_DIR$/packages/component/package.json" />
       </list>
     </option>
   </component>
@@ -467,49 +530,26 @@
         <subPane>
           <expand>
             <path>
-              <item name="nuke" type="b2602c69:ProjectViewProjectNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
+              <item name="nuker" type="b2602c69:ProjectViewProjectNode" />
+              <item name="nuker" type="462c0819:PsiDirectoryNode" />
             </path>
             <path>
-              <item name="nuke" type="b2602c69:ProjectViewProjectNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
+              <item name="nuker" type="b2602c69:ProjectViewProjectNode" />
+              <item name="nuker" type="462c0819:PsiDirectoryNode" />
               <item name="packages" type="462c0819:PsiDirectoryNode" />
             </path>
             <path>
-              <item name="nuke" type="b2602c69:ProjectViewProjectNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
+              <item name="nuker" type="b2602c69:ProjectViewProjectNode" />
+              <item name="nuker" type="462c0819:PsiDirectoryNode" />
               <item name="packages" type="462c0819:PsiDirectoryNode" />
-              <item name="component" type="462c0819:PsiDirectoryNode" />
+              <item name="domOptions" type="462c0819:PsiDirectoryNode" />
             </path>
             <path>
-              <item name="nuke" type="b2602c69:ProjectViewProjectNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
+              <item name="nuker" type="b2602c69:ProjectViewProjectNode" />
+              <item name="nuker" type="462c0819:PsiDirectoryNode" />
               <item name="packages" type="462c0819:PsiDirectoryNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="nuke" type="b2602c69:ProjectViewProjectNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
-              <item name="packages" type="462c0819:PsiDirectoryNode" />
-              <item name="share" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="nuke" type="b2602c69:ProjectViewProjectNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
-              <item name="packages" type="462c0819:PsiDirectoryNode" />
-              <item name="vDom" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="nuke" type="b2602c69:ProjectViewProjectNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
-              <item name="packages" type="462c0819:PsiDirectoryNode" />
-              <item name="vDom" type="462c0819:PsiDirectoryNode" />
+              <item name="domOptions" type="462c0819:PsiDirectoryNode" />
               <item name="src" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="nuke" type="b2602c69:ProjectViewProjectNode" />
-              <item name="nuke" type="462c0819:PsiDirectoryNode" />
-              <item name="scripts" type="462c0819:PsiDirectoryNode" />
             </path>
           </expand>
           <select />
@@ -529,6 +569,7 @@
   </component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="D:\procedure\webProject\nuke\packages\nodeOptions" />
       <recent name="D:\procedure\webProject\nuke\packages" />
       <recent name="D:\procedure\webProject\nuke" />
     </key>
@@ -562,22 +603,26 @@
       <workItem from="1586221114953" duration="11110000" />
       <workItem from="1586662048560" duration="597000" />
       <workItem from="1586919455334" duration="4698000" />
-      <workItem from="1586924633722" duration="3621000" />
+      <workItem from="1586924633722" duration="8370000" />
+      <workItem from="1587000180154" duration="18136000" />
+      <workItem from="1587033338922" duration="3564000" />
+      <workItem from="1587045432132" duration="283000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="34754000" />
+    <option name="totallyTimeSpent" value="61486000" />
   </component>
   <component name="ToolWindowManager">
     <frame x="-8" y="-8" width="1936" height="1056" extended-state="6" />
     <editor active="true" />
     <layout>
+      <window_info id="npm" side_tool="true" />
       <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.13593256" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
-      <window_info anchor="bottom" id="Find" order="1" weight="0.03253796" />
+      <window_info anchor="bottom" x="390" y="330" width="1048" height="555" id="Find" order="1" type="FLOATING" weight="0.60195225" />
       <window_info anchor="bottom" id="Run" order="2" />
       <window_info anchor="bottom" id="Debug" order="3" weight="0.4" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
@@ -585,7 +630,7 @@
       <window_info anchor="bottom" id="TODO" order="6" />
       <window_info anchor="bottom" id="Docker" order="7" show_stripe_button="false" />
       <window_info anchor="bottom" id="Version Control" order="8" />
-      <window_info anchor="bottom" id="Terminal" order="9" visible="true" weight="0.3253796" />
+      <window_info anchor="bottom" id="Terminal" order="9" visible="true" weight="0.36008677" />
       <window_info anchor="bottom" id="Event Log" order="10" side_tool="true" />
       <window_info anchor="bottom" id="TypeScript" order="11" />
       <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
@@ -633,20 +678,10 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/verify-commit-msg.js">
-      <provider selected="true" editor-type-id="text-editor" />
-    </entry>
     <entry file="file://$PROJECT_DIR$/.eslintignore">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="27">
           <caret line="1" column="4" selection-start-line="1" selection-start-column="4" selection-end-line="1" selection-end-column="4" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/alias.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="81">
-          <caret line="3" column="18" selection-start-line="3" selection-start-column="18" selection-end-line="3" selection-end-column="18" />
         </state>
       </provider>
     </entry>
@@ -667,13 +702,6 @@
     <entry file="file://$PROJECT_DIR$/packages/nuke/src/index.js">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
-    <entry file="file://$PROJECT_DIR$/packages/nuke/index.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="27">
-          <caret line="1" selection-start-line="1" selection-end-line="1" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/.eslintrc.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="756">
@@ -681,53 +709,157 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/packages/share/index.js">
-      <provider selected="true" editor-type-id="text-editor" />
-    </entry>
-    <entry file="file://$PROJECT_DIR$/package.json">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="243">
-          <caret line="9" column="26" selection-start-line="9" selection-start-column="26" selection-end-line="9" selection-end-column="26" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/packages/share/src/index.js">
-      <provider selected="true" editor-type-id="text-editor" />
-    </entry>
     <entry file="file://$PROJECT_DIR$/packages/component/index.js">
       <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/scripts/verify-commit-msg.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="162">
+          <caret line="6" column="26" lean-forward="true" selection-start-line="6" selection-start-column="26" selection-end-line="6" selection-end-column="26" />
+        </state>
+      </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/packages/component/src/index.js">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
-    <entry file="file://$PROJECT_DIR$/packages/component/package.json">
+    <entry file="file://$PROJECT_DIR$/packages/domOptions/src/index.js">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/share/index.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="243">
-          <caret line="9" column="18" selection-start-line="9" selection-start-column="18" selection-end-line="9" selection-end-column="18" />
+        <state>
+          <caret column="40" selection-start-column="40" selection-end-column="40" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/scripts/alias.js" />
+    <entry file="file://$PROJECT_DIR$/README.md">
+      <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
+        <state split_layout="SPLIT">
+          <first_editor relative-caret-position="54">
+            <caret line="2" lean-forward="true" selection-start-line="2" selection-end-line="2" />
+          </first_editor>
+          <second_editor />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/nuke/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="81">
+          <caret line="3" lean-forward="true" selection-start-line="3" selection-end-line="3" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/package-lock.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="54">
+          <caret line="2" column="25" selection-start-line="2" selection-start-column="25" selection-end-line="2" selection-end-column="25" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/vDom/src/hooks.js">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/share/src/consts.js">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/share/src/utils.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="162">
+          <caret line="6" column="28" lean-forward="true" selection-start-line="6" selection-start-column="28" selection-end-line="6" selection-end-column="28" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/vDom/src/vNode.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state>
+          <caret column="31" lean-forward="true" selection-start-column="31" selection-end-column="31" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/vDom/src/index.js">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/vDom/package.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="81">
+          <caret line="3" column="31" selection-start-line="3" selection-start-column="31" selection-end-line="3" selection-end-column="31" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/share/src/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state>
+          <caret column="8" selection-start-column="8" selection-end-column="8" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/vDom/index.js">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/domOptions/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state>
+          <caret column="27" selection-start-column="27" selection-end-column="27" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/domOptions/package.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="135">
+          <caret line="5" column="33" selection-start-line="5" selection-start-column="33" selection-end-line="5" selection-end-column="33" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/share/package.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="351">
+          <caret line="13" column="23" selection-start-line="13" selection-start-column="23" selection-end-line="13" selection-end-column="23" />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/packages/nuke/package.json">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="108">
-          <caret line="4" column="21" selection-start-line="4" selection-start-column="21" selection-end-line="4" selection-end-column="21" />
+        <state relative-caret-position="81">
+          <caret line="3" column="28" selection-start-line="3" selection-start-column="28" selection-end-line="3" selection-end-column="28" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/component/package.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="81">
+          <caret line="3" column="36" selection-start-line="3" selection-start-column="36" selection-end-line="3" selection-end-column="36" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/vDom/src/operations.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="432">
+          <caret line="16" column="1" selection-start-line="16" selection-start-column="1" selection-end-line="16" selection-end-column="1" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/packages/domOptions/src/operations.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="162">
+          <caret line="6" column="35" lean-forward="true" selection-start-line="6" selection-start-column="35" selection-end-line="6" selection-end-column="35" />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/rollup.config.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="567">
-          <caret line="21" column="45" selection-start-line="21" selection-start-column="45" selection-end-line="21" selection-end-column="45" />
+        <state relative-caret-position="378">
+          <caret line="16" column="20" selection-start-line="16" selection-start-column="20" selection-end-line="16" selection-end-column="20" />
           <folding>
             <element signature="e#0#24#0" expanded="true" />
           </folding>
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/packages/vDom/src/index.js">
+    <entry file="file://$PROJECT_DIR$/package.json">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="216">
-          <caret line="8" column="3" lean-forward="true" selection-start-line="8" selection-start-column="3" selection-end-line="8" selection-end-column="3" />
+        <state relative-caret-position="432">
+          <caret line="25" column="47" selection-start-line="25" selection-start-column="47" selection-end-line="25" selection-end-column="47" />
         </state>
       </provider>
     </entry>

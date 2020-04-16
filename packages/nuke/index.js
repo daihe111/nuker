@@ -1,5 +1,5 @@
-function Nuke() {
+function Nuker() {
 
 }
 
-export { Nuke };
+export { Nuker };

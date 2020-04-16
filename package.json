@@ -1,11 +1,11 @@
 {
-  "name": "nuke",
-  "version": "0.1.0",
+  "name": "nuker",
+  "version": "0.1.0-alpha",
   "description": "A reactive and quick mvvm-framework.",
-  "main": "dist/nuke.runtime.common.js",
-  "module": "dist/nuke.runtime.esm.js",
-  "unpkg": "dist/nuke.js",
-  "jsdelivr": "dist/nuke.js",
+  "main": "dist/nuker.runtime.common.js",
+  "module": "dist/nuker.runtime.esm.js",
+  "unpkg": "dist/nuker.js",
+  "jsdelivr": "dist/nuker.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "precommit": "lint-staged"
@@ -23,23 +23,24 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/daihe111/nuke.git"
+    "url": "git+https://github.com/daihe111/nuker.git"
   },
   "author": "Levi Dai",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/daihe111/nuke/issues"
+    "url": "https://github.com/daihe111/nuker/issues"
   },
   "keywords": [
-    "nuke"
+    "nuker"
   ],
-  "homepage": "https://github.com/daihe111/nuke#readme",
+  "homepage": "https://github.com/daihe111/nuker#readme",
   "devDependencies": {
     "@babel/core": "^7.9.0",
     "@babel/plugin-proposal-class-properties": "^7.8.3",
     "@babel/plugin-syntax-dynamic-import": "^7.8.3",
     "@babel/plugin-transform-flow-strip-types": "^7.9.0",
     "@babel/preset-env": "^7.9.0",
+    "@rollup/plugin-alias": "^3.1.0",
     "@rollup/plugin-commonjs": "^11.0.2",
     "@rollup/plugin-json": "^4.0.2",
     "@rollup/plugin-node-resolve": "^7.1.1",
@@ -51,6 +52,7 @@
     "eslint": "^6.8.0",
     "eslint-plugin-flowtype": "^4.7.0",
     "husky": "^4.2.3",
+    "jest": "^25.3.0",
     "lint-staged": "^10.1.2",
     "rollup": "^2.3.3",
     "rollup-plugin-eslint": "^7.0.0",

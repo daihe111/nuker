@@ -1,9 +1,13 @@
 {
-  "name": "@nuker/nuke",
+  "name": "@nuker/dom-options",
   "version": "0.1.0-alpha",
-  "description": "nuker/nuke",
+  "description": "@nuker/dom-options",
   "main": "index.js",
-  "module": "dist/nuke.esm-bundler.js",
+  "module": "dist/dom-options.esm-bundler.js",
+  "files": [
+    "index.js",
+    "dist"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

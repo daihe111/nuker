@@ -1,5 +1,0 @@
-function Nuker() {
-
-}
-
-export { Nuker };

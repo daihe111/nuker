@@ -39,8 +39,21 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
 const reactiveInstrumentations: Record<string, Function> = createEmptyObject()
 
 (['indexOf', 'lastIndexOf', 'include'] as const).forEach((fnName: string) => {
-  arrayInstrumentations[fnName] = function() {
-    
+  arrayInstrumentations[fnName] = function(...args: any[]) {
+    const rawMethod: Function = Array.prototype[fnName]
+    const res = rawMethod.call(this, ...args)
+    if (!proxyCache.get(this)[ReactiveFlags.IS_ACTIVE]) {
+      return res
+    }
+
+    for (let i = 0, len = this.length; i < len; i++) {
+      collect(this, i, ReactiveActionTypes.GET)
+    }
+
+    if (res === true || res !== -1) {
+      return res
+    }
+    return rawMethod.call(this, ...args.map(arg => getRaw(arg)))
   }
 })
 
@@ -151,7 +164,6 @@ function defineProperty(
     return Reflect.defineProperty(target, key, descriptors)
   }
 
-  // todo 需要考虑 value = '' 这种直接赋值的方式同时触发 set、defineProperty trap 的问题
   const oldValue = getRaw(target[key])
   const newValue = getRaw(
     hasOwn(descriptors, 'value') ?

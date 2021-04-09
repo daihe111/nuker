@@ -104,7 +104,11 @@ export function createEffect<T = any>(
 // e.g. effect process steps:
 // pushEffect -> collector(collect -> dispatch -> collect -> dispatch ...)
 // -> popEffect -> disableCollecting -> dispatcher -> enableCollecting
-export function collect(target: object, key: string | symbol, type: number) {
+export function collect(
+  target: object,
+  key: string | symbol | number,
+  type: number
+) {
   if (collectingFlag === CollectingFlags.COLLECTING_CLOSED) {
     return
   }
@@ -122,7 +126,7 @@ export function collect(target: object, key: string | symbol, type: number) {
 
 export function dispatch(
   target: object,
-  key: string | symbol,
+  key: string | symbol | number,
   type: number,
   oldValue?: unknown,
   value?: unknown

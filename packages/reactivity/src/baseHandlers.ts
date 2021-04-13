@@ -11,11 +11,8 @@ import {
   Target,
   proxyCache,
   ProxyHandlers,
-  statusCache,
+  proxyStatusCache,
   ReactiveProxy,
-  ReactiveHelpers,
-  ReactiveProxyStatus,
-  ReactiveHelperToStatusMap,
   getRaw
 } from './reactive'
 import {
@@ -25,6 +22,7 @@ import {
   createEmptyObject,
   hasChanged
 } from '../../share/src'
+import { reactiveInstrumentations } from './reactiveHelpers'
 
 export interface PropertyDescriptor {
   configurable?: boolean;
@@ -36,7 +34,6 @@ export interface PropertyDescriptor {
 }
 
 const arrayInstrumentations: Record<string, Function> = createEmptyObject()
-const reactiveInstrumentations: Record<string, Function> = createEmptyObject()
 
 (['indexOf', 'lastIndexOf', 'include'] as const).forEach((fnName: string) => {
   arrayInstrumentations[fnName] = function(...args: any[]) {
@@ -57,9 +54,10 @@ const reactiveInstrumentations: Record<string, Function> = createEmptyObject()
   }
 })
 
-([ReactiveHelpers.ACTIVE, ReactiveHelpers.DEACTIVE] as const).forEach((fnName: string) => {
-  reactiveInstrumentations[fnName] = function() {
-    statusCache.set(this, ReactiveHelperToStatusMap[fnName])
+// TODO 待 hack Array 方法
+([] as const).forEach((fnName: string) => {
+  arrayInstrumentations[fnName] = function(...args: any[]) {
+
   }
 })
 
@@ -75,7 +73,7 @@ function createGetter(isShallow: boolean = false) {
     if (key === ReactiveFlags.RAW) {
       return target
     } else if (key === ReactiveFlags.IS_ACTIVE) {
-      return statusCache.get(receiver as ReactiveProxy)
+      return proxyStatusCache.get(receiver as ReactiveProxy)
     } else if (key === ReactiveFlags.IS_REACTIVE) {
       return true
     } else if (key === ReactiveFlags.IS_SHALLOW) {

@@ -32,19 +32,9 @@ export const enum ReactiveFlags {
   PROXY = '__n_proxy'
 }
 
-export const ReactiveHelpers: Record<string, string> = {
-  ACTIVE: 'active',
-  DEACTIVE: 'deactive'
-}
-
 export const enum ReactiveProxyStatus {
   DEACTIVE = 0,
   ACTIVE = 1
-}
-
-export const ReactiveHelperToStatusMap: Record<string, number> = {
-  [ReactiveHelpers.ACTIVE]: ReactiveProxyStatus.ACTIVE,
-  [ReactiveHelpers.DEACTIVE]: ReactiveProxyStatus.DEACTIVE
 }
 
 export interface ReactiveProxy {
@@ -66,7 +56,7 @@ export interface ReactiveOptions {
 // target - ReactiveProxy Map
 export const proxyCache = new WeakMap<Target, any>()
 // ReactiveProxy - isActive Map
-export const statusCache = new WeakMap<ReactiveProxy, number>()
+export const proxyStatusCache = new WeakMap<ReactiveProxy, number>()
 
 export function reactive(
   target: Target, 
@@ -95,7 +85,7 @@ export function reactive(
   )
   target[ReactiveFlags.PROXY] = reactiveProxy as ReactiveProxy
   proxyCache.set(target, reactiveProxy)
-  statusCache.set(reactiveProxy as ReactiveProxy, ReactiveProxyStatus.ACTIVE)
+  proxyStatusCache.set(reactiveProxy as ReactiveProxy, ReactiveProxyStatus.ACTIVE)
   return reactiveProxy
 }
 

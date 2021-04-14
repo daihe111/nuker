@@ -158,31 +158,36 @@ function ownKeys(target: Target): (string | number | symbol)[] {
   return Reflect.ownKeys(target)
 }
 
-function defineProperty(
-  target: Target,
-  key: string | symbol,
-  descriptors: PropertyDescriptor
-): boolean {
-  if (!proxyCache.get(target)[ReactiveFlags.IS_ACTIVE]) {
-    return Reflect.defineProperty(target, key, descriptors)
-  }
-
-  const oldValue = getRaw(target[key])
-  const newValue = getRaw(
-    hasOwn(descriptors, 'value') ?
+function createDefinePropertyHandler(isShallow: boolean = false) {
+  return function defineProperty(
+    target: Target,
+    key: string | symbol,
+    descriptors: PropertyDescriptor
+  ): boolean {
+    if (!proxyCache.get(target)[ReactiveFlags.IS_ACTIVE]) {
+      return Reflect.defineProperty(target, key, descriptors)
+    }
+  
+    let oldValue = target[key]
+    let newValue = hasOwn(descriptors, 'value') ?
       descriptors.value :
       (hasOwn(descriptors, 'get') ?
         descriptors.get() :
-        undefined)
-  );
-  const isAdd = !hasOwn(target, key)
-  if (isAdd) {
-    dispatch(target, key, ReactiveActionTypes.ADD, undefined, newValue)
-  } else if (hasChanged(newValue, oldValue)) {
-    dispatch(target, key, ReactiveActionTypes.UPDATE, oldValue, newValue)
-  }
+        undefined);
+    if (!isShallow) {
+      oldValue = getRaw(oldValue)
+      newValue = getRaw(newValue)
+    }
 
-  return Reflect.defineProperty(target, key, descriptors)
+    const isAdd = !hasOwn(target, key)
+    if (isAdd) {
+      dispatch(target, key, ReactiveActionTypes.ADD, undefined, newValue)
+    } else if (hasChanged(newValue, oldValue)) {
+      dispatch(target, key, ReactiveActionTypes.UPDATE, oldValue, newValue)
+    }
+  
+    return Reflect.defineProperty(target, key, descriptors)
+  }
 }
 
 function deleteProperty(target: Target, key: string | symbol): boolean {
@@ -199,7 +204,7 @@ export function createBaseHandlers({ isShallow }: ReactiveOptions): ProxyHandler
     get: createGetter(isShallow),
     has,
     ownKeys,
-    defineProperty,
+    defineProperty: createDefinePropertyHandler(isShallow),
     deleteProperty
   }
 }

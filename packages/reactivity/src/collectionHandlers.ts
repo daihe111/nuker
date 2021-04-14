@@ -5,15 +5,18 @@ import {
   ReactiveFlags,
   proxyStatusCache,
   ReactiveProxy,
-  proxyCache
+  proxyCache,
+  getRaw
 } from "./reactive";
 import {
   hasOwn,
-  isObject
+  isObject,
+  hasChanged
 } from "../../share/src";
 import {
   collect,
-  ReactiveActionTypes
+  ReactiveActionTypes,
+  dispatch
 } from "./effect";
 import { reactiveInstrumentations } from './reactiveHelpers'
 
@@ -38,7 +41,23 @@ const collectionInstrumentations: Record<string, Function> = {
     return !isShallow && isObject(value) ? reactive(value, { isShallow }) : value
   },
   set(key: any, value: any, isShallow: boolean) {
-    
+    let oldValue = this.get(key)
+    let newValue = value
+    if (!isShallow) {
+      // 非 shallow 模式下需要对新旧值的深度 diff，当且仅当数值的原始值发生变化时
+      // 才会派发 effects 的批量执行
+      oldValue = getRaw(oldValue)
+      newValue = getRaw(newValue)
+    }
+
+    const isAdd = !this.has(key)
+    if (isAdd) {
+      dispatch(this, key, ReactiveActionTypes.ADD, oldValue, newValue)
+    } else if (hasChanged(newValue, oldValue)) {
+      dispatch(this, key, ReactiveActionTypes.UPDATE, oldValue, newValue)
+    }
+
+    return this.set(key, value)
   },
   has(key: any, isShallow: boolean) {
 

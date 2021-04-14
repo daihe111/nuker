@@ -119,13 +119,18 @@ function createSetter(isShallow: boolean = false) {
       return Reflect.set(target, key, value, receiver)
     }
 
+    let oldValue = target[key]
+    let newValue = value
+    if (!isShallow) {
+      oldValue = getRaw(oldValue)
+      newValue = getRaw(newValue)
+    }
+
     const isAdd = !hasOwn(target, key)
-    const oldValue = getRaw(target[key])
-    const newValue = getRaw(value)
     if (isAdd) {
-      dispatch(target, key, ReactiveActionTypes.ADD, undefined, value)
+      dispatch(target, key, ReactiveActionTypes.ADD, oldValue, newValue)
     } else if (hasChanged(newValue, oldValue)) {
-      dispatch(target, key, ReactiveActionTypes.UPDATE, oldValue, value)
+      dispatch(target, key, ReactiveActionTypes.UPDATE, oldValue, newValue)
     }
 
     return Reflect.set(target, key, value, receiver)

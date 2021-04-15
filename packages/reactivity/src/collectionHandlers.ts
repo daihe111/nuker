@@ -19,6 +19,12 @@ import {
   dispatch
 } from "./effect";
 import { reactiveInstrumentations } from './reactiveHelpers'
+import {
+  createDefinePropertyHandler,
+  has,
+  ownKeys,
+  deleteProperty
+} from "./baseHandlers";
 
 // const map = new WeakMap()
 // const set = new Set()
@@ -36,6 +42,7 @@ const collectionInstrumentations: Record<string, Function> = {
       return isShallow
     }
 
+    // TODO 需要区分 key 和 rawKey 的行为表现
     const value = this.get(key)
     collect(this, key, ReactiveActionTypes.GET)
     return !isShallow && isObject(value) ? reactive(value, { isShallow }) : value
@@ -59,13 +66,31 @@ const collectionInstrumentations: Record<string, Function> = {
 
     return this.set(key, value)
   },
-  has(key: any, isShallow: boolean) {
+  has(key: any) {
+    let hasKey = this.has(key)
+    if (hasKey) {
+      collect(this, key, ReactiveActionTypes.HAS)
+      return hasKey
+    }
 
+    const rawKey = getRaw(key)
+    hasKey = this.has(rawKey)
+    if (hasKey) {
+      collect(this, rawKey, ReactiveActionTypes.HAS)
+      return hasKey
+    }
+    return hasKey
   },
   add(value: unknown, isShallow: boolean) {
-
+    const hasValue = this.has(value)
+    if (!hasValue) {
+      value = isShallow ? value : getRaw(value)
+      dispatch(this, value, ReactiveActionTypes.ADD, undefined, value)
+      return this.add(value)
+    }
+    return this
   },
-  delete(key: any, isShallow: boolean) {
+  delete(key: any) {
 
   }
 }
@@ -73,11 +98,13 @@ const collectionInstrumentations: Record<string, Function> = {
 export function createCollectionHandlers({ isShallow }: ReactiveOptions) {
   return {
     get: createGetter(isShallow),
-    set: createSetter(isShallow)
+    defineProperty: createDefinePropertyHandler(isShallow),
+    has,
+    ownKeys,
+    deleteProperty
   }
 }
 
-// Set: add delete has      Map: get set has delete
 function createGetter(isShallow: boolean = false) {
   return function get(target: Target, key: string | symbol, receiver: object) {
     if (
@@ -107,12 +134,4 @@ function createGetter(isShallow: boolean = false) {
     }
     return value
   }
-}
-
-function createSetter(isShallow: boolean = false) {
-
-}
-
-function createCollectionInstrumentation(isShallow: boolean = false) {
-  
 }

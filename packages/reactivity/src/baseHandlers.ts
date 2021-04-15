@@ -38,7 +38,8 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
 (['indexOf', 'lastIndexOf', 'include'] as const).forEach((fnName: string) => {
   arrayInstrumentations[fnName] = function(...args: any[]) {
     const rawMethod: Function = Array.prototype[fnName]
-    const res = rawMethod.call(this, ...args)
+    const rawArgs = args.slice(0, -1)
+    const res = rawMethod.call(this, ...rawArgs)
     if (!proxyCache.get(this)[ReactiveFlags.IS_ACTIVE]) {
       return res
     }
@@ -47,7 +48,11 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
       collect(this, i, ReactiveActionTypes.GET)
     }
 
-    if (res === true || res !== -1) {
+    // 1. 优先按照参数入参值进行查找，如果查找到的话则直接返回查询结果
+    // 2. 如果入参值没有查询到，并且处于非 shallow 模式，则按照入参值的原始值去查找；
+    // 如果处于 shallow 模式，直接返回入参值的查找结果
+    const isShallow: boolean = args[args.length - 1]
+    if ((res === true || res !== -1) || isShallow) {
       return res
     }
     return rawMethod.call(this, ...args.map(arg => getRaw(arg)))
@@ -137,7 +142,7 @@ function createSetter(isShallow: boolean = false) {
   }
 }
 
-function has(target: Target, key: string | symbol): boolean {
+export function has(target: Target, key: string | symbol): boolean {
   const hasKey = Reflect.has(target, key)
   if (proxyCache.get(target)[ReactiveFlags.IS_ACTIVE] && hasKey) {
     collect(target, key, ReactiveActionTypes.HAS)
@@ -145,7 +150,7 @@ function has(target: Target, key: string | symbol): boolean {
   return hasKey
 }
 
-function ownKeys(target: Target): (string | number | symbol)[] {
+export function ownKeys(target: Target): (string | number | symbol)[] {
   if (proxyCache.get(target)[ReactiveFlags.IS_ACTIVE]) {
     collect(
       target,
@@ -158,7 +163,7 @@ function ownKeys(target: Target): (string | number | symbol)[] {
   return Reflect.ownKeys(target)
 }
 
-function createDefinePropertyHandler(isShallow: boolean = false) {
+export function createDefinePropertyHandler(isShallow: boolean = false) {
   return function defineProperty(
     target: Target,
     key: string | symbol,
@@ -190,7 +195,7 @@ function createDefinePropertyHandler(isShallow: boolean = false) {
   }
 }
 
-function deleteProperty(target: Target, key: string | symbol): boolean {
+export function deleteProperty(target: Target, key: string | symbol): boolean {
   const hasOwnKey = hasOwn(target, key)
   if (proxyCache.get(target)[ReactiveFlags.IS_ACTIVE] && hasOwnKey) {
     dispatch(target, key, ReactiveActionTypes.DELETE, target[key], undefined)

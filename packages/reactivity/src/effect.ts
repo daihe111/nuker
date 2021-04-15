@@ -106,7 +106,7 @@ export function createEffect<T = any>(
 // -> popEffect -> disableCollecting -> dispatcher -> enableCollecting
 export function collect(
   target: object,
-  key: string | symbol | number,
+  key: unknown,
   type: number
 ) {
   if (collectingFlag === CollectingFlags.COLLECTING_CLOSED) {
@@ -126,7 +126,7 @@ export function collect(
 
 export function dispatch(
   target: object,
-  key: string | symbol | number,
+  key: unknown,
   type: number,
   oldValue?: unknown,
   value?: unknown

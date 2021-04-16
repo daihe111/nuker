@@ -66,10 +66,14 @@ const collectionInstrumentations: Record<string, Function> = {
 
     return this.set(key, value)
   },
-  has(key: any) {
+  has(key: any, isShallow: boolean) {
     let hasKey = this.has(key)
     if (hasKey) {
       collect(this, key, ReactiveActionTypes.HAS)
+      return hasKey
+    }
+
+    if (isShallow) {
       return hasKey
     }
 
@@ -90,7 +94,29 @@ const collectionInstrumentations: Record<string, Function> = {
     }
     return this
   },
-  delete(key: any) {
+  delete(key: any, isShallow: boolean) {
+    let hasKey = this.has(key)
+    if (hasKey) {
+      const oldValue = isShallow ? this.get(key) : getRaw(this.get(key))
+      dispatch(this, key, ReactiveActionTypes.DELETE, oldValue, undefined)
+      return this.delete(key)
+    }
+
+    if (isShallow) {
+      return this
+    }
+
+    const rawKey = getRaw(key)
+    hasKey = this.has(rawKey)
+    if (hasKey) {
+      const oldValue = getRaw(this.get(rawKey))
+      dispatch(this, rawKey, ReactiveActionTypes.DELETE, oldValue, undefined)
+      return this.delete(rawKey)
+    }
+
+    return this
+  },
+  clear() {
 
   }
 }

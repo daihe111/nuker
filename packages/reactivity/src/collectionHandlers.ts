@@ -43,9 +43,14 @@ const collectionInstrumentations: Record<string, Function> = {
     }
 
     // TODO 需要区分 key 和 rawKey 的行为表现
-    const value = this.get(key)
-    collect(this, key, ReactiveActionTypes.GET)
-    return !isShallow && isObject(value) ? reactive(value, { isShallow }) : value
+    if (isShallow) {
+      collect(this, key, ReactiveActionTypes.GET)
+      return this.get(key)
+    }
+
+    const rawKey = getRaw(key)
+    collect(this, rawKey, ReactiveActionTypes.GET)
+    return reactive(this.get(key) || this.get(rawKey), { isShallow })
   },
   set(key: any, value: any, isShallow: boolean) {
     let oldValue = this.get(key)

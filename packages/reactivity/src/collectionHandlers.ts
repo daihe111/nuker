@@ -26,49 +26,52 @@ import {
   deleteProperty
 } from "./baseHandlers";
 
-// const map = new WeakMap()
-// const set = new Set()
 const collectionInstrumentations: Record<string, Function> = {
   get(key: any, isShallow: boolean) {
-    if (key === ReactiveFlags.RAW) {
-      return this
-    } else if (key === ReactiveFlags.IS_ACTIVE) {
-      return proxyStatusCache.get(
-        proxyCache.get(this) as ReactiveProxy
-      )
-    } else if (key === ReactiveFlags.IS_REACTIVE) {
-      return true
-    } else if (key === ReactiveFlags.IS_SHALLOW) {
-      return isShallow
-    }
-
     // TODO 需要区分 key 和 rawKey 的行为表现
     if (isShallow) {
       collect(this, key, ReactiveActionTypes.GET)
       return this.get(key)
     }
 
-    const rawKey = getRaw(key)
-    collect(this, rawKey, ReactiveActionTypes.GET)
-    return reactive(this.get(key) || this.get(rawKey), { isShallow })
+    key = this.has(key) ? key : getRaw(key)
+    collect(this, key, ReactiveActionTypes.GET)
+    return reactive(this.get(key), { isShallow })
   },
   set(key: any, value: any, isShallow: boolean) {
     let oldValue = this.get(key)
-    let newValue = value
-    if (!isShallow) {
-      // 非 shallow 模式下需要对新旧值的深度 diff，当且仅当数值的原始值发生变化时
-      // 才会派发 effects 的批量执行
-      oldValue = getRaw(oldValue)
-      newValue = getRaw(newValue)
+    if (isShallow) {
+      if (!this.has(key)) {
+        dispatch(this, key, ReactiveActionTypes.ADD, oldValue, value)
+      } else if (hasChanged(value, oldValue)) {
+        dispatch(this, key, ReactiveActionTypes.UPDATE, oldValue, value)
+      }
+  
+      return this.set(key, value)
+    }
+    // if (isShallow) {
+    //   // 非 shallow 模式下需要对新旧值的深度 diff，当且仅当数值的原始值发生变化时
+    //   // 才会派发 effects 的批量执行
+    //   oldValue = getRaw(oldValue)
+    //   newValue = getRaw(newValue)
+    // }
+
+    oldValue = getRaw(oldValue)
+    value = getRaw(value)
+    if (this.has(key)) {
+      if (hasChanged(value, oldValue)) {
+        dispatch(this, key, ReactiveActionTypes.UPDATE, oldValue, value)
+        return this.set(key, value)
+      }
+      return this
     }
 
-    const isAdd = !this.has(key)
-    if (isAdd) {
-      dispatch(this, key, ReactiveActionTypes.ADD, oldValue, newValue)
-    } else if (hasChanged(newValue, oldValue)) {
-      dispatch(this, key, ReactiveActionTypes.UPDATE, oldValue, newValue)
+    key = getRaw(key)
+    if (!this.has(key)) {
+      dispatch(this, key, ReactiveActionTypes.ADD, oldValue, value)
+    } else if (hasChanged(value, oldValue)) {
+      dispatch(this, key, ReactiveActionTypes.UPDATE, oldValue, value)
     }
-
     return this.set(key, value)
   },
   has(key: any, isShallow: boolean) {

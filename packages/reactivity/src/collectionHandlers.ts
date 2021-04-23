@@ -49,12 +49,6 @@ const collectionInstrumentations: Record<string, Function> = {
   
       return this.set(key, value)
     }
-    // if (isShallow) {
-    //   // 非 shallow 模式下需要对新旧值的深度 diff，当且仅当数值的原始值发生变化时
-    //   // 才会派发 effects 的批量执行
-    //   oldValue = getRaw(oldValue)
-    //   newValue = getRaw(newValue)
-    // }
 
     oldValue = getRaw(oldValue)
     value = getRaw(value)
@@ -76,31 +70,37 @@ const collectionInstrumentations: Record<string, Function> = {
   },
   has(key: any, isShallow: boolean) {
     let hasKey = this.has(key)
+    if (isShallow) {
+      if (hasKey) {
+        collect(this, key, ReactiveActionTypes.HAS)
+      }
+      return hasKey
+    }
+
+    key = hasKey ? key : getRaw(key)
+    hasKey = hasKey || this.has(key)
     if (hasKey) {
       collect(this, key, ReactiveActionTypes.HAS)
-      return hasKey
-    }
-
-    if (isShallow) {
-      return hasKey
-    }
-
-    const rawKey = getRaw(key)
-    hasKey = this.has(rawKey)
-    if (hasKey) {
-      collect(this, rawKey, ReactiveActionTypes.HAS)
       return hasKey
     }
     return hasKey
   },
   add(value: unknown, isShallow: boolean) {
-    const hasValue = this.has(value)
-    if (!hasValue) {
-      value = isShallow ? value : getRaw(value)
-      dispatch(this, value, ReactiveActionTypes.ADD, undefined, value)
-      return this.add(value)
+    if (isShallow) {
+      if (!this.has(value)) {
+        dispatch(this, value, ReactiveActionTypes.ADD, undefined, value)
+        return this.add(value)
+      }
+      return this
     }
-    return this
+
+    if (this.has(value) || this.has(getRaw(value))) {
+      return this
+    }
+
+    value = getRaw(value)
+    dispatch(this, value, ReactiveActionTypes.ADD, undefined, value)
+    return this.add(value)
   },
   delete(key: any, isShallow: boolean) {
     let hasKey = this.has(key)

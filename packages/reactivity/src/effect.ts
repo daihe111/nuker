@@ -27,7 +27,8 @@ export const enum ReactiveActionTypes {
   DELETE = 2,
   UPDATE = 3,
   HAS = 4,
-  ITERATE = 5
+  CLEAR = 5,
+  ITERATE = 6
 }
 
 export const ITERATE_PROXY_KEYS = {

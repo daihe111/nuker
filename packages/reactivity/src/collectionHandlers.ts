@@ -11,7 +11,9 @@ import {
 import {
   hasOwn,
   isObject,
-  hasChanged
+  hasChanged,
+  isMap,
+  isSet
 } from "../../share/src";
 import {
   collect,
@@ -104,28 +106,33 @@ const collectionInstrumentations: Record<string, Function> = {
   },
   delete(key: any, isShallow: boolean) {
     let hasKey = this.has(key)
-    if (hasKey) {
-      const oldValue = isShallow ? this.get(key) : getRaw(this.get(key))
-      dispatch(this, key, ReactiveActionTypes.DELETE, oldValue, undefined)
-      return this.delete(key)
-    }
-
     if (isShallow) {
+      if (hasKey) {
+        dispatch(this, key, ReactiveActionTypes.DELETE, this.get(key))
+        return this.delete(key)
+      }
       return this
     }
 
-    const rawKey = getRaw(key)
-    hasKey = this.has(rawKey)
-    if (hasKey) {
-      const oldValue = getRaw(this.get(rawKey))
-      dispatch(this, rawKey, ReactiveActionTypes.DELETE, oldValue, undefined)
-      return this.delete(rawKey)
+    key = hasKey ? key : getRaw(key)
+    if (hasKey || this.has(key)) {
+      dispatch(this, key, ReactiveActionTypes.DELETE, getRaw(this.get(key)))
+      return this.delete(key)
     }
-
+    
     return this
   },
-  clear() {
-
+  clear(isShallow: boolean) {
+    const items = isMap(this) ? this.keys() : isSet(this) ? this.values() : null
+    if (items) {
+      items.forEach((item: any) => {
+        let oldValue = isMap(this) ? this.get(item) : item
+        oldValue = isShallow ? oldValue : getRaw(oldValue)
+        dispatch(this, item, ReactiveActionTypes.CLEAR, oldValue)
+      })
+      return this.clear()
+    }
+    return this
   }
 }
 

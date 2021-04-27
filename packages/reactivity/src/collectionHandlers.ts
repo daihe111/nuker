@@ -28,111 +28,118 @@ import {
   deleteProperty
 } from "./baseHandlers";
 
+export type MapTypes = Map<any, any> | WeakMap<any, any>
+export type SetTypes = Set<any> | WeakSet<any>
+export type CollectionTypes = MapTypes | SetTypes
+export type IterableTypes = Map<any, any> | Set<any>
+
 const collectionInstrumentations: Record<string, Function> = {
-  get(key: any, isShallow: boolean) {
+  get(key: any, target: MapTypes, isShallow: boolean) {
     // TODO 需要区分 key 和 rawKey 的行为表现
     if (isShallow) {
-      collect(this, key, ReactiveActionTypes.GET)
-      return this.get(key)
+      collect(target, key, ReactiveActionTypes.GET)
+      return target.get(key)
     }
 
-    key = this.has(key) ? key : getRaw(key)
-    collect(this, key, ReactiveActionTypes.GET)
-    return reactive(this.get(key), { isShallow })
+    key = target.has(key) ? key : getRaw(key)
+    collect(target, key, ReactiveActionTypes.GET)
+    return reactive(target.get(key), { isShallow })
   },
-  set(key: any, value: any, isShallow: boolean) {
-    let oldValue = this.get(key)
+  set(key: any, value: any, target: MapTypes, isShallow: boolean) {
+    let oldValue = target.get(key)
     if (isShallow) {
-      if (!this.has(key)) {
-        dispatch(this, key, ReactiveActionTypes.ADD, oldValue, value)
+      if (!target.has(key)) {
+        dispatch(target, key, ReactiveActionTypes.ADD, oldValue, value)
       } else if (hasChanged(value, oldValue)) {
-        dispatch(this, key, ReactiveActionTypes.UPDATE, oldValue, value)
+        dispatch(target, key, ReactiveActionTypes.UPDATE, oldValue, value)
       }
   
-      return this.set(key, value)
+      return target.set(key, value)
     }
 
     oldValue = getRaw(oldValue)
     value = getRaw(value)
-    if (this.has(key)) {
+    if (target.has(key)) {
       if (hasChanged(value, oldValue)) {
-        dispatch(this, key, ReactiveActionTypes.UPDATE, oldValue, value)
-        return this.set(key, value)
+        dispatch(target, key, ReactiveActionTypes.UPDATE, oldValue, value)
+        return target.set(key, value)
       }
-      return this
+      return target
     }
 
     key = getRaw(key)
-    if (!this.has(key)) {
-      dispatch(this, key, ReactiveActionTypes.ADD, oldValue, value)
+    if (!target.has(key)) {
+      dispatch(target, key, ReactiveActionTypes.ADD, oldValue, value)
     } else if (hasChanged(value, oldValue)) {
-      dispatch(this, key, ReactiveActionTypes.UPDATE, oldValue, value)
+      dispatch(target, key, ReactiveActionTypes.UPDATE, oldValue, value)
     }
-    return this.set(key, value)
+    return target.set(key, value)
   },
-  has(key: any, isShallow: boolean) {
-    let hasKey = this.has(key)
+  has(key: any, target: CollectionTypes, isShallow: boolean) {
+    let hasKey = target.has(key)
     if (isShallow) {
       if (hasKey) {
-        collect(this, key, ReactiveActionTypes.HAS)
+        collect(target, key, ReactiveActionTypes.HAS)
       }
       return hasKey
     }
 
     key = hasKey ? key : getRaw(key)
-    hasKey = hasKey || this.has(key)
+    hasKey = hasKey || target.has(key)
     if (hasKey) {
-      collect(this, key, ReactiveActionTypes.HAS)
+      collect(target, key, ReactiveActionTypes.HAS)
       return hasKey
     }
     return hasKey
   },
-  add(value: unknown, isShallow: boolean) {
+  add(value: unknown, target: SetTypes, isShallow: boolean) {
     if (isShallow) {
-      if (!this.has(value)) {
-        dispatch(this, value, ReactiveActionTypes.ADD, undefined, value)
-        return this.add(value)
+      if (!target.has(value)) {
+        dispatch(target, value, ReactiveActionTypes.ADD, undefined, value)
+        return target.add(value)
       }
-      return this
+      return target
     }
 
-    if (this.has(value) || this.has(getRaw(value))) {
-      return this
+    if (target.has(value) || target.has(getRaw(value))) {
+      return target
     }
 
     value = getRaw(value)
-    dispatch(this, value, ReactiveActionTypes.ADD, undefined, value)
-    return this.add(value)
+    dispatch(target, value, ReactiveActionTypes.ADD, undefined, value)
+    return target.add(value)
   },
-  delete(key: any, isShallow: boolean) {
-    let hasKey = this.has(key)
+  delete(key: any, target: CollectionTypes, isShallow: boolean) {
+    let hasKey = target.has(key)
     if (isShallow) {
       if (hasKey) {
-        dispatch(this, key, ReactiveActionTypes.DELETE, this.get(key))
-        return this.delete(key)
+        dispatch(target, key, ReactiveActionTypes.DELETE, target.get(key))
+        return target.delete(key)
       }
-      return this
+      return target
     }
 
     key = hasKey ? key : getRaw(key)
-    if (hasKey || this.has(key)) {
-      dispatch(this, key, ReactiveActionTypes.DELETE, getRaw(this.get(key)))
-      return this.delete(key)
+    if (hasKey || target.has(key)) {
+      dispatch(target, key, ReactiveActionTypes.DELETE, getRaw(target.get(key)))
+      return target.delete(key)
     }
     
-    return this
+    return target
   },
-  clear(isShallow: boolean) {
-    const items = isMap(this) ? this.keys() : isSet(this) ? this.values() : null
-    if (items) {
-      items.forEach((item: any) => {
-        let oldValue = isMap(this) ? this.get(item) : item
-        oldValue = isShallow ? oldValue : getRaw(oldValue)
-        dispatch(this, item, ReactiveActionTypes.CLEAR, oldValue)
+  clear(isShallow: boolean, target: IterableTypes) {
+    if (target.size) {
+      target.forEach((value: any, key: any) => {
+        dispatch(
+          target,
+          key,
+          ReactiveActionTypes.CLEAR,
+          isShallow ? value : getRaw(value)
+        )
       })
-      return this.clear()
+      return target.clear()
     }
-    return this
+    return target
   }
 }
 
@@ -147,9 +154,9 @@ export function createCollectionHandlers({ isShallow }: ReactiveOptions) {
 }
 
 function createGetter(isShallow: boolean = false) {
-  return function get(target: Target, key: string | symbol, receiver: object) {
+  return function get(target: CollectionTypes, key: string | symbol, receiver: object) {
     if (
-      proxyCache.get(target) !== receiver ||
+      proxyCache.get(target as Target) !== receiver ||
       !receiver[ReactiveFlags.IS_ACTIVE]
     ) {
       return Reflect.get(target, key, receiver)
@@ -160,8 +167,10 @@ function createGetter(isShallow: boolean = false) {
         collectionInstrumentations,
         key,
         receiver
-      ).bind(target, isShallow)
+      ).bind(null, target, isShallow)
     }
+
+    // todo Collection 数据结构属性拦截
 
     if (hasOwn(reactiveInstrumentations, key)) {
       return Reflect.get(reactiveInstrumentations, key, receiver).bind(receiver)

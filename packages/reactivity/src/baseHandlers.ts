@@ -34,28 +34,24 @@ export interface PropertyDescriptor {
 }
 
 const arrayInstrumentations: Record<string, Function> = createEmptyObject()
-
 (['indexOf', 'lastIndexOf', 'include'] as const).forEach((fnName: string) => {
   arrayInstrumentations[fnName] = function(...args: any[]) {
-    const rawMethod: Function = Array.prototype[fnName]
-    const rawArgs = args.slice(0, -1)
-    const res = rawMethod.call(this, ...rawArgs)
-    if (!proxyCache.get(this)[ReactiveFlags.IS_ACTIVE]) {
-      return res
-    }
-
-    for (let i = 0, len = this.length; i < len; i++) {
-      collect(this, i, ReactiveActionTypes.GET)
+    const target: Array<any> = args[args.length - 2]
+    for (let i = 0, len = target.length; i < len; i++) {
+      collect(target, i, ReactiveActionTypes.GET)
     }
 
     // 1. 优先按照参数入参值进行查找，如果查找到的话则直接返回查询结果
     // 2. 如果入参值没有查询到，并且处于非 shallow 模式，则按照入参值的原始值去查找；
     // 如果处于 shallow 模式，直接返回入参值的查找结果
+    const rawMethod: Function = Array.prototype[fnName]
     const isShallow: boolean = args[args.length - 1]
+    const rawArgs = args.slice(0, -2)
+    const res = rawMethod.call(target, ...rawArgs)
     if ((res === true || res !== -1) || isShallow) {
       return res
     }
-    return rawMethod.call(this, ...args.map(arg => getRaw(arg)))
+    return rawMethod.call(target, ...args.map(arg => getRaw(arg)))
   }
 })
 
@@ -91,7 +87,11 @@ function createGetter(isShallow: boolean = false) {
 
     // handle of Array
     if (isArray(target) && hasOwn(arrayInstrumentations, key)) {
-      return Reflect.get(arrayInstrumentations, key, receiver).bind(target)
+      return Reflect.get(
+        arrayInstrumentations,
+        key,
+        receiver
+      ).bind(null, target, isShallow)
     }
 
     const value = Reflect.get(target, key, receiver)

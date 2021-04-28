@@ -55,10 +55,25 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
   }
 })
 
-// TODO 待 hack Array 方法
-([] as const).forEach((fnName: string) => {
-  arrayInstrumentations[fnName] = function(...args: any[]) {
-
+(['every', 'filter', 'find', 'findIndex'] as const).forEach((fnName: string) => {
+  arrayInstrumentations[fnName] = function(
+    callback: Function,
+    thisArg: object,
+    target: Array<any>,
+    isShallow: boolean
+  ) {
+    for (let i = 0, len = target.length; i < len; i++) {
+      collect(target, i, ReactiveActionTypes.GET)
+    }
+    const rawMethod: Function = Array.prototype[fnName]
+    const cb = function(value: any, index: number, array: Array<any>) {
+      const res: boolean = callback.call(thisArg, value, index, array)
+      if (res || isShallow) {
+        return res
+      }
+      return callback.call(thisArg, getRaw(value), index, array)
+    }
+    return rawMethod.call(target, callback, thisArg)
   }
 })
 

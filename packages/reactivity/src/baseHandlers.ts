@@ -58,7 +58,7 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
 (['every', 'filter', 'find', 'findIndex'] as const).forEach((fnName: string) => {
   arrayInstrumentations[fnName] = function(
     callback: Function,
-    thisArg: object,
+    thisArg: any,
     target: Array<any>,
     isShallow: boolean
   ) {
@@ -73,7 +73,12 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
       }
       return callback.call(thisArg, getRaw(value), index, array)
     }
-    return rawMethod.call(target, callback, thisArg)
+
+    const res = rawMethod.call(target, cb, thisArg)
+    if (!isShallow && ['find', 'filter'].includes(fnName)) {
+      return Array.isArray(res) ? res.map(i => getRaw(i)) : getRaw(res)
+    }
+    return res
   }
 })
 

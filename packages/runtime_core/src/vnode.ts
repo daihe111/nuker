@@ -16,22 +16,28 @@ export interface VNodeChildren {
 
 export type VNodeRef = | string
 
+export const enum VNodeFlags {
+  IS_VNODE = '__n_isVNode'
+}
+
 export interface VNode {
-  tag: VNodeTag,
-  props: VNodeProps,
-  children: VNodeChildren,
+  [VNodeFlags.IS_VNODE]: true
 
-  elm: unknown,
-  ref: VNodeRef,
-  vnodeType: number,
-  instance: unknown,
-  directives: unknown,
-  components: unknown,
+  tag: VNodeTag
+  props: VNodeProps
+  children: VNodeChildren
 
-  parent: VNode,
-  nextSibling: VNode,
+  elm: unknown
+  ref: VNodeRef
+  vnodeType: number
+  instance: unknown
+  directives: unknown
+  components: unknown
 
-  patchFlag: number,
+  parent: VNode
+  nextSibling: VNode
+
+  patchFlag: number
 }
 
 export const enum VNodeTypes {
@@ -75,7 +81,7 @@ export function cloneVNode(vNode) {
   });
 }
 
-export function isSameVNode(vn1, vn2) {
+export function isSameVNode(vn1: VNode, vn2: VNode) {
   return vn1.tag === vn2.tag && vn1.key === vn2.key;
 }
 

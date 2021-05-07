@@ -29,13 +29,15 @@ export interface VNode {
 
   elm: unknown
   ref: VNodeRef
+  key: string | number | symbol
   vnodeType: number
   instance: unknown
   directives: unknown
   components: unknown
 
-  parent: VNode
-  nextSibling: VNode
+  parent: VNode | null
+  nextSibling: VNode | null
+  firstChild: VNode | null
 
   patchFlag: number
 }
@@ -69,15 +71,15 @@ export function parseVNodeType(tag: VNodeTag): number {
   return VNodeTypes.INVALID_NODE
 }
 
-export function cloneVNode(vNode) {
+export function cloneVNode(vnode: VNode, props: object, children: VNodeChildren) {
   return Object.assign({}, {
-    tag: vNode.tag,
-    data: Object.assign({}, vNode.data),
-    key: vNode.key,
-    children: Object.assign({}, vNode.children),
-    parent: vNode.parent,
-    elm: vNode.elm,
-    isComponent: vNode.isComponent
+    tag: vnode.tag,
+    data: Object.assign({}, vnode.data),
+    key: vnode.key,
+    children: Object.assign({}, vnode.children),
+    parent: vnode.parent,
+    elm: vnode.elm,
+    isComponent: vnode.isComponent
   });
 }
 
@@ -87,9 +89,9 @@ export function isSameVNode(vn1: VNode, vn2: VNode) {
 
 export function createVNode(
   tag: VNodeTag,
-  props: VNodeProps,
-  children: VNodeChildren,
-  patchFlag: number
+  props?: VNodeProps,
+  children?: VNodeChildren,
+  patchFlag?: number
 ): VNode {
   const vnodeType = parseVNodeType(tag)
   return {

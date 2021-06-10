@@ -1,6 +1,8 @@
 export const EMPTY_OBJ: { readonly [key: string]: any } = {}
 export const EMPTY_ARR = []
 
+export const MAX_INT = Math.pow(2, 53)
+
 export const NOOP = () => {}
 
 /**
@@ -38,6 +40,7 @@ export const isCollection = (val: unknown): boolean =>
 export const isDate = (val: unknown): val is Date => val instanceof Date
 export const isFunction = (val: unknown): val is Function =>
   typeof val === 'function'
+export const isNumber = (val: unknown): val is number => typeof val === 'number'
 export const isString = (val: unknown): val is string => typeof val === 'string'
 export const isSymbol = (val: unknown): val is symbol => typeof val === 'symbol'
 export const isObject = (val: unknown): val is Record<any, any> =>

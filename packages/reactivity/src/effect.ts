@@ -1,3 +1,5 @@
+import { Job } from "../../runtime_core/src/scheduler"
+
 export interface EffectOptions {
   lazy?: boolean,
   scheduler?: (task: unknown) => void,
@@ -6,10 +8,10 @@ export interface EffectOptions {
   onRunned?: () => void
 }
 
-export interface Effect<T = any> extends EffectOptions {
+export interface Effect<T = any> extends EffectOptions, Job {
   (): T,
   isEffect: boolean,
-  id: number,
+  id?: number | string,
   isActive: boolean,
   stores: Set<Set<Effect>>,
   collector: () => T,
@@ -98,7 +100,7 @@ export function createEffect<T = any>(
   effect.onCollected = options.onCollected
   effect.onDispatched = options.onDispatched
   effect.isActive = true
-  effect.id = id++
+  effect.id = `__n_Effect_${id++}`
   return effect
 }
 

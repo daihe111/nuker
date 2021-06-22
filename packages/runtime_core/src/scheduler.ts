@@ -1,7 +1,7 @@
-import { isNumber, MAX_INT, isFunction } from "../../share/src"
+import { isNumber, MAX_INT, isFunction, EMPTY_OBJ } from "../../share/src"
 
 export interface Job {
-  (): Job | void
+  (...args: any[]): Job | void
   id: number | string
   priority?: number
   birth?: number
@@ -9,6 +9,7 @@ export interface Job {
   timeout?: number
   expirationTime?: number
   delay?: number
+  options?: JobOptions
 }
 
 export interface JobNode {
@@ -47,25 +48,29 @@ export const JobTimeouts = {
 }
 
 export interface JobOptions {
-
+  isDeepFirst?: boolean
 }
 
 // 每次开始新一轮的任务执行时都需要一个新的任务执行者，是每一轮任务执行的上下文
-export interface JobInvoker {
-  pauser: unknown
-  resumer: unknown
-  canceler: unknown
+export interface JobController {
+  pause?: unknown
+  resume?: unknown
+  cancel?: unknown
 }
 
 let id = 0
 // 每帧的时间片单元，是每帧时间内用来执行 js 逻辑的最长时长，任务
 // 连续执行超过时间片单元，就需要中断执行把主线程让给优先级更高的任务
+// 比如说渲染工作
 const timeUnit = 8
+// 当前任务执行 loop 截止时间
+let deadline: number | void;
 // 任务 loop 处于 pending 阶段，积累执行队列中的任务
 let isLoopPending = false
 // 任务 loop 是否处于 running 阶段，批量执行执行队列中的任务
 let isLoopRunning = false
-let timer: number
+let timer: number | void
+
 // 任务队列使用链表的原因: 插入任务只需要查找和 1 次插入的开销，
 // 如果使用数组这种连续存储结构，需要查找和移动元素的开销
 // 执行队列
@@ -113,9 +118,9 @@ export function genCurrentTime(): number {
 export function registerJob(
   job: Job,
   priority: number = JobPriorities.NORMAL,
-  timeout: number,
+  timeout?: number,
   delay: number = 0,
-  options: JobOptions
+  options: JobOptions = EMPTY_OBJ
 ): Job {
   if (!isNumber(timeout)) {
     switch (priority) {
@@ -141,12 +146,12 @@ export function registerJob(
   }
 
   job.id = `${SchedulerFlags.JOB_ID_BASE}${id++}`
-  job.priority = priority
+  job.priority = job.priority || priority
   job.birth = genCurrentTime()
-  job.startTime = genCurrentTime()
-  job.timeout = timeout
-  job.expirationTime = job.startTime + timeout
-  job.delay = delay
+  job.timeout = job.timeout || timeout
+  job.expirationTime = job.birth + timeout
+  job.delay = job.delay || delay
+  job.options = job.options || options
 
   assignJob(job)
   return job
@@ -156,13 +161,84 @@ export function registerJob(
 // 返回值表示执行队列当前 loop 是否全部执行完毕，全部执行完毕
 // 返回 true，loop 中断则返回 false
 export function invokeJobs(jobRoot: JobNode): boolean {
-  let currentNode = jobRoot
+  isLoopPending = false
+  isLoopRunning = true
+  let currentNode = head(jobRoot)
+  deadline = genCurrentTime() + timeUnit
   while (currentNode !== null) {
-    // TODO 执行执行队列中的任务，当任务执行完毕时任务出队
-    currentNode = currentNode.next
+    if (shouldYield()) {
+      // 当前 loop 执行中断结束，执行权让给高优先级的任务.
+      // 将高优先级的任务添加到执行队列，然后在下一个 loop
+      // 去恢复任务的批量执行
+      fetchPriorJobs()
+      requestRunLoop()
+      isLoopRunning = false
+      return false
+    }
+
+    // 任务如果返回子任务，说明该任务未执行完毕，后面还会
+    // 继续执行，因此当前任务节点不出队，将子任务替换到当前
+    // 任务节点上
+    const childJob = invokeJob(currentNode)
+    if (childJob === null) {
+      // 当前任务执行完毕，移出任务队列
+      popJob(jobRoot)
+    }
+    currentNode = head(jobRoot)
   }
 
+  isLoopRunning = false
   return true
+}
+
+// 获取备选任务队列中高优先级的任务，移动到执行队列中
+export function fetchPriorJobs(): void {
+  let currentNode = head(backupListRoot)
+  const currentTime = genCurrentTime()
+  while (currentNode !== null) {
+    const job = currentNode.job
+    if (job.startTime <= currentTime) {
+      popJob(backupListRoot)
+      pushJob(job, jobListRoot)
+    } else {
+      break
+    }
+    currentNode = head(backupListRoot)
+  }
+}
+
+export function head(JobRoot: JobNode): JobNode | null {
+  return JobRoot.next || null
+}
+
+export function shouldYield() {
+  const currentTime = genCurrentTime()
+  return currentTime >= deadline
+}
+
+// 执行单个任务，返回有效子任务，说明当前任务未执行完，任务不出队；
+// 否则表示该任务已执行完毕，需要做出队操作
+export function invokeJob(jobNode: JobNode): Job | null {
+  const job = jobNode.job
+  if (isFunction(job)) {
+    const childJob: Job | void = job(genCurrentTime())
+    if (isFunction(childJob)) {
+      const { isDeepFirst } = job.options
+      // 根据任务是否深度优先执行分别进行处理
+      if (isDeepFirst) {
+        // 深度优先执行子任务
+        jobNode.job = childJob
+        return childJob
+      }
+      // 子任务作为新任务重新注册入队
+      return (registerJob(childJob), null)
+    }
+    
+    // 无子任务
+    return null
+  }
+
+  return null
 }
 
 // 任务编排与任务执行触发
@@ -170,25 +246,59 @@ export function assignJob(job: Job) {
   if (!job.delay) {
     // 非延时任务
     pushJob(job, jobListRoot)
-    if (!isLoopPending) {
-      createMacrotask(invokeJobs, 0, jobListRoot)
-    }
+    requestRunLoop()
   } else {
     // 延时任务
-
+    pushJob(job, backupListRoot)
+    // 延时任务的调度者
+    scheduleBackupJobs(job)
   }
 }
 
-export function createJobInvoker(): JobInvoker {
+// 请求开启一个任务执行 loop
+export function requestRunLoop() {
+  if (!isLoopPending) {
+    createMacrotask(invokeJobs, 0, jobListRoot)
+    isLoopPending = true
+  }
+}
 
+export function scheduleBackupJobs(initJob: Job): void {
+  const delay = initJob.startTime - genCurrentTime()
+  timer = createMacrotask(invokeBackupJobs, delay, backupListRoot)
+}
+
+export function invokeBackupJobs(): boolean {
+  // 批量执行备选任务
+  return true
+}
+
+export function createJobController(): JobController {
+  return {
+    pause() {
+
+    },
+    resume() {
+
+    },
+    cancel() {
+
+    }
+  }
 }
 
 // 生成一个宏任务，不同环境生产出的宏任务有可能有差异性
+// 为什么使用宏任务，原因是浏览器主线程每一个 event loop
+// 是这样运行的:
+// 运行 js 宏任务 -> 执行微任务 -> 布局计算 layout 及
+// 渲染工作 -> 进入下一个 event loop，执行宏任务
+// 宏任务是在渲染执行完之后才会执行，这样能够保证在下一轮
+// 任务执行前，浏览器能够有时间去做渲染工作
 export function createMacrotask(
   cb: Function,
   delay: number = 0,
   ...cbArgs: any[]
-) {
+): number | void {
   return timer = setTimeout(cb, delay, ...cbArgs)
 }
 
@@ -210,14 +320,14 @@ export function pushJob(job: Job, jobRoot: JobNode): boolean {
   const sortFlag =
     jobRoot.type === JobListTypes.JOB_LIST ?
       job.expirationTime:
-      job.startTime
+      job.birth
   let currentNode = jobRoot
   while (currentNode !== null) {
     const currentJob = currentNode.job
     const currentSortFlag = 
       currentNode.type === JobListTypes.JOB_LIST ?
         currentJob.expirationTime :
-        currentJob.startTime
+        currentJob.birth
     if (sortFlag <= currentSortFlag) {
       const prevNode = currentNode.previous
       const newNode = prevNode.next = createJobNode(job, jobRoot.type)

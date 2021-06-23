@@ -70,6 +70,7 @@ let isLoopPending = false
 // 任务 loop 是否处于 running 阶段，批量执行执行队列中的任务
 let isLoopRunning = false
 let timer: number | void
+let currentJobNode: JobNode | void
 
 // 任务队列使用链表的原因: 插入任务只需要查找和 1 次插入的开销，
 // 如果使用数组这种连续存储结构，需要查找和移动元素的开销
@@ -145,11 +146,13 @@ export function registerJob(
     }
   }
 
+  // 优先以 job 本身携带的信息为准，因为 job 有可能重复注册
   job.id = `${SchedulerFlags.JOB_ID_BASE}${id++}`
   job.priority = job.priority || priority
   job.birth = genCurrentTime()
   job.timeout = job.timeout || timeout
-  job.expirationTime = job.birth + timeout
+  job.startTime = job.birth + job.delay
+  job.expirationTime = job.startTime + job.timeout
   job.delay = job.delay || delay
   job.options = job.options || options
 
@@ -160,6 +163,10 @@ export function registerJob(
 // 调度系统的执行者
 // 返回值表示执行队列当前 loop 是否全部执行完毕，全部执行完毕
 // 返回 true，loop 中断则返回 false
+// 每个 loop 跑完后都会去后补任务队列中获取高优任务，然后在
+// 下个 loop 去执行。但是需要考虑一些延时较长的任务，在所有
+// loop 全部跑完后依然没有时机去添加到执行队列中，那么这些任务
+// 便没有了触发执行的时机
 export function invokeJobs(jobRoot: JobNode): boolean {
   isLoopPending = false
   isLoopRunning = true
@@ -248,10 +255,10 @@ export function assignJob(job: Job) {
     pushJob(job, jobListRoot)
     requestRunLoop()
   } else {
-    // 延时任务
+    // 延时任务 (备选任务)
     pushJob(job, backupListRoot)
-    // 延时任务的调度者
-    scheduleBackupJobs(job)
+    // 请求备选任务的调度执行
+    requestInvokeBackupJob(job)
   }
 }
 
@@ -263,14 +270,16 @@ export function requestRunLoop() {
   }
 }
 
-export function scheduleBackupJobs(initJob: Job): void {
-  const delay = initJob.startTime - genCurrentTime()
-  timer = createMacrotask(invokeBackupJobs, delay, backupListRoot)
+export function requestInvokeBackupJob(jobNode: JobNode): void {
+  const delay = jobNode.job.startTime - genCurrentTime()
+  timer = createMacrotask(invokeBackupJob, delay, jobNode)
 }
 
-export function invokeBackupJobs(): boolean {
-  // 批量执行备选任务
-  return true
+export function invokeBackupJob(jobNode: JobNode): void {
+  const job = jobNode.job
+  removeJob(job, backupListRoot)
+  pushJob(job, jobListRoot)
+  requestRunLoop()
 }
 
 export function createJobController(): JobController {
@@ -320,14 +329,14 @@ export function pushJob(job: Job, jobRoot: JobNode): boolean {
   const sortFlag =
     jobRoot.type === JobListTypes.JOB_LIST ?
       job.expirationTime:
-      job.birth
+      job.startTime
   let currentNode = jobRoot
   while (currentNode !== null) {
     const currentJob = currentNode.job
     const currentSortFlag = 
       currentNode.type === JobListTypes.JOB_LIST ?
         currentJob.expirationTime :
-        currentJob.birth
+        currentJob.startTime
     if (sortFlag <= currentSortFlag) {
       const prevNode = currentNode.previous
       const newNode = prevNode.next = createJobNode(job, jobRoot.type)
@@ -350,6 +359,23 @@ export function popJob(jobRoot: JobNode): boolean {
     jobRoot.next = firstNode
     firstNode.previous = jobRoot
     return true
+  }
+
+  return false
+}
+
+export function removeJob(job: Job, jobRoot: JobNode): boolean {
+  let currentNode = jobRoot
+  while (currentNode !== null) {
+    if (currentNode.job === job) {
+      // 匹配到目标任务，将该任务删除
+      const prevNode = currentNode.previous
+      const nextNode = currentNode.next
+      prevNode.next = nextNode
+      nextNode.previous = prevNode
+      return true
+    }
+    currentNode = currentNode.next
   }
 
   return false

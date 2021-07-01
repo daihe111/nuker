@@ -1,4 +1,4 @@
-import { isNumber, MAX_INT, isFunction, EMPTY_OBJ } from "../../share/src"
+import { isNumber, MAX_INT, isFunction, EMPTY_OBJ, deleteProperty, hasOwn } from "../../share/src"
 
 export interface Job {
   (...args: any[]): Job | void
@@ -9,6 +9,7 @@ export interface Job {
   timeout?: number
   expirationTime?: number
   delay?: number
+  isExpired?: boolean
   options?: JobOptions
 }
 
@@ -48,7 +49,8 @@ export const JobTimeouts = {
 }
 
 export interface JobOptions {
-  isDeepFirst?: boolean
+  isDeepFirst?: boolean // 任务执行是否遵循深度优先规则
+  expireStrategy?: number // 过期任务的处理策略
 }
 
 // 每次开始新一轮的任务执行时都需要一个新的任务执行者，是每一轮任务执行的上下文
@@ -56,6 +58,13 @@ export interface JobController {
   pause?: unknown
   resume?: unknown
   cancel?: unknown
+}
+
+export const enum ExpireStrategies {
+  DEFAULT = 0, // 过期任务按照过期时间排序插入执行队列
+  REBIRTH = 1, // 过期任务需要重生，作为新的任务插入执行队列
+  IDLE = 2, // 执行队列空闲时批量执行过期任务、剩余备选任务
+  INVALID = 3 // 过期任务作为垃圾任务被抛弃
 }
 
 let id = 0
@@ -183,6 +192,21 @@ export function invokeJobs(jobRoot: JobNode): boolean {
       return false
     }
 
+    // 任务过期了，需要将过期任务从执行队列中转移到备选队列，
+    // 然后等到当前 loop 结束后再从备选队列中进行任务调度
+    const currentJob = currentNode.job
+    const isExpired = currentJob.expirationTime < genCurrentTime()
+    if (isExpired && !currentJob.isExpired) {
+      // 过期任务首次被标记过期，会将其移动到备选任务队列，
+      // 当该过期任务在后续的 loop 中被再次添加到执行队列
+      // 中时，该任务将会优先执行，而不会被再次转移到备选任务队列
+      popJob(jobListRoot)
+      currentJob.isExpired = true
+      pushJob(currentJob, backupListRoot)
+      currentNode = head(jobListRoot)
+      continue
+    }
+
     // 任务如果返回子任务，说明该任务未执行完毕，后面还会
     // 继续执行，因此当前任务节点不出队，将子任务替换到当前
     // 任务节点上
@@ -199,12 +223,46 @@ export function invokeJobs(jobRoot: JobNode): boolean {
 }
 
 // 获取备选任务队列中高优先级的任务，移动到执行队列中
+// 如何处理已过期任务？
+// 1. 过期任务根据任务的到期时间添加到执行队列，在下一个
+//    loop 执行；
+// 2. 过期任务在下一个 loop 开始前重新进行注册，作为全新的任务
+//    在下一个 loop 时进入到执行队列中；
+// 3. 过期任务不再进行后续处理，作为垃圾任务被丢弃掉
 export function fetchPriorJobs(): void {
   let currentNode = head(backupListRoot)
   const currentTime = genCurrentTime()
   while (currentNode !== null) {
     const job = currentNode.job
     if (job.startTime <= currentTime) {
+      if (job.isExpired) {
+        const expireStrategy = job.options.expireStrategy
+        switch (expireStrategy) {
+          case ExpireStrategies.DEFAULT:
+            popJob(backupListRoot)
+            pushJob(job, jobListRoot)
+            break
+          case ExpireStrategies.REBIRTH:
+            popJob(backupListRoot)
+            rebirthJob(job)
+            pushJob(job, jobListRoot)
+            break
+          case ExpireStrategies.IDLE:
+            // 任务降级处理
+            transformToIdle(job)
+            popJob(backupListRoot)
+            pushJob(job, jobListRoot)
+            break
+          case ExpireStrategies.INVALID:
+            popJob(backupListRoot)
+            break
+          default:
+            popJob(backupListRoot)
+            pushJob(job, jobListRoot)
+            break
+        }
+      }
+      
       popJob(backupListRoot)
       pushJob(job, jobListRoot)
     } else {
@@ -212,6 +270,24 @@ export function fetchPriorJobs(): void {
     }
     currentNode = head(backupListRoot)
   }
+}
+
+// 重生任务
+export function rebirthJob(job: Job): void {
+  job.birth = genCurrentTime()
+  job.startTime = job.delay ? (job.birth + job.delay) : job.birth
+  job.expirationTime = job.startTime + job.timeout
+  const expireKey = 'isExpired'
+  if (hasOwn(job, expireKey)) {
+    deleteProperty(job, expireKey)
+  }
+}
+
+// 将任务转换成 idle 等级任务，idle 等级任务永远不会过期，
+// 将会在执行队列空闲时再执行
+export function transformToIdle(job: Job): void {
+  job.priority = JobPriorities.IDLE
+  job.expirationTime = job.startTime + JobTimeouts.IDLE
 }
 
 export function head(JobRoot: JobNode): JobNode | null {

@@ -176,7 +176,7 @@ export function registerJob(
 // 下个 loop 去执行。但是需要考虑一些延时较长的任务，在所有
 // loop 全部跑完后依然没有时机去添加到执行队列中，那么这些任务
 // 便没有了触发执行的时机
-export function invokeJobs(jobRoot: JobNode): boolean {
+export function flushJobs(jobRoot: JobNode): boolean {
   isLoopPending = false
   isLoopRunning = true
   let currentNode = head(jobRoot)
@@ -218,8 +218,48 @@ export function invokeJobs(jobRoot: JobNode): boolean {
     currentNode = head(jobRoot)
   }
 
+  // 当前 loop 结束
   isLoopRunning = false
+
+  // 执行队列的任务全部执行完成，执行备选任务
+  if (isListEmpty(jobRoot)) {
+    requestRunBackup()
+  }
+
   return true
+}
+
+// 当执行队列为空时，检测备选队列，并触发备选队列任务的执行，
+// 并且不断重复该过程，直到两个队列中的任务全部被执行完毕
+export function requestRunBackup(): void {
+  const backupJobNode = head(backupListRoot)
+  if (backupJobNode && backupJobNode.job) {
+    // 有效任务节点
+    const backupJob = backupJobNode.job
+    const currentTime = genCurrentTime()
+    if (backupJob.startTime <= currentTime) {
+      popJob(backupListRoot)
+      pushJob(backupJob, jobListRoot)
+      requestRunLoop()
+    } else {
+      createMacrotask(
+        flushBackup,
+        backupJob.startTime - currentTime,
+        backupListRoot
+      )
+    }
+  } else {
+    // 无效任务节点
+    popJob(backupListRoot)
+  }
+}
+
+// 执行备选任务队列
+export function flushBackup(backupRoot: JobNode, jobRoot: JobNode) {
+  const { job: backupJob } = head(backupRoot)
+  popJob(backupRoot)
+  pushJob(backupJob, jobRoot)
+  requestRunLoop()
 }
 
 // 获取备选任务队列中高优先级的任务，移动到执行队列中
@@ -331,28 +371,36 @@ export function assignJob(job: Job) {
     pushJob(job, jobListRoot)
     requestRunLoop()
   } else {
-    // 延时任务 (备选任务)
-    pushJob(job, backupListRoot)
-    // 请求备选任务的调度执行
-    requestInvokeBackupJob(job)
+    // 延时任务 (备选任务的一种)
+    // pushJob(job, backupListRoot)
+
+    // 请求延时任务的调度执行，由于延时任务需要严格按照
+    // 预定的开始时间来执行 (不考虑 js 执行栈任务执行耗时)，
+    // 如果依赖相邻 loop 间获取后补任务的时机来触发延时任务
+    // 的执行，假如上个 loop 任务的执行导致当前时间已经超过
+    // 延时任务的 startTime 很多，那么该延时任务实际上就
+    // 预计的开始执行时间要延后很多
+    // 同时为了防止出现执行队列中的任务全部执行完毕，但是
+    // 还没有到达延时任务开始时间的情况发生，也需要在延时任务
+    // 注册时起一个 macrotask 保证该任务一定是有机会被执行的
+    requestInvokeDelayJob(job)
   }
 }
 
 // 请求开启一个任务执行 loop
 export function requestRunLoop() {
   if (!isLoopPending) {
-    createMacrotask(invokeJobs, 0, jobListRoot)
+    createMacrotask(flushJobs, 0, jobListRoot)
     isLoopPending = true
   }
 }
 
-export function requestInvokeBackupJob(jobNode: JobNode): void {
-  const delay = jobNode.job.startTime - genCurrentTime()
-  timer = createMacrotask(invokeBackupJob, delay, jobNode)
+export function requestInvokeDelayJob(job: Job): void {
+  const delay = job.startTime - genCurrentTime()
+  timer = createMacrotask(invokeDelayJob, delay, job)
 }
 
-export function invokeBackupJob(jobNode: JobNode): void {
-  const job = jobNode.job
+export function invokeDelayJob(job: Job): void {
   removeJob(job, backupListRoot)
   pushJob(job, jobListRoot)
   requestRunLoop()
@@ -455,4 +503,8 @@ export function removeJob(job: Job, jobRoot: JobNode): boolean {
   }
 
   return false
+}
+
+export function isListEmpty(listRoot: JobNode) {
+  return !head(listRoot)
 }

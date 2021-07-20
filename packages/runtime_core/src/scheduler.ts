@@ -3,6 +3,7 @@ import { isNumber, MAX_INT, isFunction, EMPTY_OBJ, deleteProperty, hasOwn } from
 export interface Job {
   (...args: any[]): Job | void
   id: number | string
+  controller: JobControllers
   priority?: number
   birth?: number
   startTime?: number
@@ -53,11 +54,11 @@ export interface JobOptions {
   expireStrategy?: number // 过期任务的处理策略
 }
 
-// 每次开始新一轮的任务执行时都需要一个新的任务执行者，是每一轮任务执行的上下文
-export interface JobController {
-  pause?: unknown
-  resume?: unknown
-  cancel?: unknown
+// 任务控制器
+export interface JobControllers {
+  pause?: Function
+  resume?: Function
+  cancel?: Function
 }
 
 export const enum ExpireStrategies {
@@ -65,6 +66,11 @@ export const enum ExpireStrategies {
   REBIRTH = 1, // 过期任务需要重生，作为新的任务插入执行队列
   IDLE = 2, // 执行队列空闲时批量执行过期任务、剩余备选任务
   INVALID = 3 // 过期任务作为垃圾任务被抛弃
+}
+
+export const enum MacrotaskTypes {
+  TIMEOUT = 0, // setTimeout
+  BROADCAST = 1 // port postMessage
 }
 
 let id = 0
@@ -78,6 +84,8 @@ let deadline: number | void;
 let isLoopPending = false
 // 任务 loop 是否处于 running 阶段，批量执行执行队列中的任务
 let isLoopRunning = false
+// 任务 loop 是否可执行
+let isLoopValid = true
 let timer: number | void
 let currentJobNode: JobNode | void
 
@@ -164,6 +172,7 @@ export function registerJob(
   job.expirationTime = job.startTime + job.timeout
   job.delay = job.delay || delay
   job.options = job.options || options
+  job.controller = createJobControllers(job, jobListRoot)
 
   assignJob(job)
   return job
@@ -181,7 +190,7 @@ export function flushJobs(jobRoot: JobNode): boolean {
   isLoopRunning = true
   let currentNode = head(jobRoot)
   deadline = genCurrentTime() + timeUnit
-  while (currentNode !== null) {
+  while (currentNode !== null && isLoopValid) {
     if (shouldYield()) {
       // 当前 loop 执行中断结束，执行权让给高优先级的任务.
       // 将高优先级的任务添加到执行队列，然后在下一个 loop
@@ -244,8 +253,8 @@ export function requestRunBackup(): void {
     } else {
       createMacrotask(
         flushBackup,
-        backupJob.startTime - currentTime,
-        backupListRoot
+        [backupListRoot, jobListRoot],
+        { delay: backupJob.startTime - currentTime }
       )
     }
   } else {
@@ -344,7 +353,7 @@ export function shouldYield() {
 export function invokeJob(jobNode: JobNode): Job | null {
   const job = jobNode.job
   if (isFunction(job)) {
-    const childJob: Job | void = job(genCurrentTime())
+    const childJob: Job | void = job(job.controller)
     if (isFunction(childJob)) {
       const { isDeepFirst } = job.options
       // 根据任务是否深度优先执行分别进行处理
@@ -364,6 +373,32 @@ export function invokeJob(jobNode: JobNode): Job | null {
   return null
 }
 
+// 任务执行暂停
+export function pause(): void {
+  isLoopValid = false
+}
+
+// 任务执行恢复
+export function resume(): void {
+  isLoopValid = true
+}
+
+// 取消任务
+export function cancel(jobNode: JobNode): void {
+  jobNode.job = null
+}
+
+// 创建任务控制器
+export function createJobControllers(job: Job, jobRoot: JobNode): JobControllers {
+  return {
+    pause,
+    resume,
+    cancel(): void {
+      return cancel(findJob(job, jobRoot))
+    }
+  }
+}
+
 // 任务编排与任务执行触发
 export function assignJob(job: Job) {
   if (!job.delay) {
@@ -372,51 +407,15 @@ export function assignJob(job: Job) {
     requestRunLoop()
   } else {
     // 延时任务 (备选任务的一种)
-    // pushJob(job, backupListRoot)
-
-    // 请求延时任务的调度执行，由于延时任务需要严格按照
-    // 预定的开始时间来执行 (不考虑 js 执行栈任务执行耗时)，
-    // 如果依赖相邻 loop 间获取后补任务的时机来触发延时任务
-    // 的执行，假如上个 loop 任务的执行导致当前时间已经超过
-    // 延时任务的 startTime 很多，那么该延时任务实际上就
-    // 预计的开始执行时间要延后很多
-    // 同时为了防止出现执行队列中的任务全部执行完毕，但是
-    // 还没有到达延时任务开始时间的情况发生，也需要在延时任务
-    // 注册时起一个 macrotask 保证该任务一定是有机会被执行的
-    requestInvokeDelayJob(job)
+    pushJob(job, backupListRoot)
   }
 }
 
 // 请求开启一个任务执行 loop
 export function requestRunLoop() {
   if (!isLoopPending) {
-    createMacrotask(flushJobs, 0, jobListRoot)
+    createMacrotask(flushJobs, [jobListRoot])
     isLoopPending = true
-  }
-}
-
-export function requestInvokeDelayJob(job: Job): void {
-  const delay = job.startTime - genCurrentTime()
-  timer = createMacrotask(invokeDelayJob, delay, job)
-}
-
-export function invokeDelayJob(job: Job): void {
-  removeJob(job, backupListRoot)
-  pushJob(job, jobListRoot)
-  requestRunLoop()
-}
-
-export function createJobController(): JobController {
-  return {
-    pause() {
-
-    },
-    resume() {
-
-    },
-    cancel() {
-
-    }
   }
 }
 
@@ -428,11 +427,21 @@ export function createJobController(): JobController {
 // 宏任务是在渲染执行完之后才会执行，这样能够保证在下一轮
 // 任务执行前，浏览器能够有时间去做渲染工作
 export function createMacrotask(
-  cb: Function,
-  delay: number = 0,
-  ...cbArgs: any[]
+  task: Function,
+  taskArgs: any[],
+  options: Record<string, any> = EMPTY_OBJ
 ): number | void {
-  return timer = setTimeout(cb, delay, ...cbArgs)
+  const { type = MacrotaskTypes.TIMEOUT } = options
+  switch (type) {
+    case MacrotaskTypes.TIMEOUT:
+      return setTimeout(task, options.delay, ...taskArgs)
+    case MacrotaskTypes.BROADCAST:
+      // TODO 注册广播形式的宏任务，待实现
+      return null
+    default:
+      // do nothing
+      return null
+  }
 }
 
 export function createJobNode(job: Job, type: string | number): JobNode {
@@ -497,6 +506,30 @@ export function removeJob(job: Job, jobRoot: JobNode): boolean {
       const nextNode = currentNode.next
       prevNode.next = nextNode
       nextNode.previous = prevNode
+      return true
+    }
+    currentNode = currentNode.next
+  }
+
+  return false
+}
+
+export function findJob(job: Job, jobRoot: JobNode): JobNode | null {
+  let currentNode = jobRoot
+  while (currentNode !== null) {
+    if (currentNode.job === job) {
+      return currentNode
+    }
+    currentNode = currentNode.next
+  }
+
+  return null
+}
+
+export function hasJob(job: Job, jobRoot: JobNode): boolean | null {
+  let currentNode = jobRoot
+  while (currentNode !== null) {
+    if (currentNode.job === job) {
       return true
     }
     currentNode = currentNode.next

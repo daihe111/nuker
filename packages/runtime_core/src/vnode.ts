@@ -27,6 +27,7 @@ export interface VNode {
   props: VNodeProps
   children: VNodeChildren
 
+  id: number // 节点编号 id (自增)
   elm: unknown
   ref: VNodeRef
   key: string | number | symbol
@@ -35,7 +36,9 @@ export interface VNode {
   directives: unknown
   components: unknown
 
+  // 节点指针
   parent: VNode | null
+  prevSibling?: VNode
   nextSibling: VNode | null
   firstChild: VNode | null
 

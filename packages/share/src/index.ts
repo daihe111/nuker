@@ -1,3 +1,5 @@
+import { BaseListNode } from "./shareTypes"
+
 export const EMPTY_OBJ: { readonly [key: string]: any } = {}
 export const EMPTY_ARR = []
 
@@ -68,3 +70,11 @@ export const createEmptyObject = (): any => {
 // compare whether a value has changed, accounting for NaN.
 export const hasChanged = (value: any, oldValue: any): boolean =>
   value !== oldValue && (value === value || oldValue === oldValue)
+
+export function genBaseListNode(content: any, contentKey: string | number | symbol): BaseListNode {
+  return {
+    [contentKey]: content,
+    previous: null,
+    next: null
+  }
+}

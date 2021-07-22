@@ -1,4 +1,15 @@
-import { isNumber, MAX_INT, isFunction, EMPTY_OBJ, deleteProperty, hasOwn } from "../../share/src"
+import {
+  isNumber,
+  MAX_INT,
+  isFunction,
+  EMPTY_OBJ,
+  deleteProperty,
+  hasOwn,
+  genBaseListNode
+} from "../../share/src"
+import {
+  BaseListNode
+} from '../../share/src/shareTypes'
 
 export interface Job {
   (...args: any[]): Job | void
@@ -11,15 +22,15 @@ export interface Job {
   expirationTime?: number
   delay?: number
   isExpired?: boolean
+  // 当前任务节点的子任务快照，测试环境可为祖先任务创建
+  // 子任务的快照用于调度分析
+  scopedSnapshot?: JobNode | null
   options?: JobOptions
 }
 
-export interface JobNode {
+export interface JobNode extends BaseListNode {
   isRoot?: boolean
-  type: number | string
-  job: Job | null
-  previous: JobNode | null
-  next: JobNode | null
+  type?: number | string
 }
 
 export const enum JobListTypes {
@@ -73,6 +84,7 @@ export const enum MacrotaskTypes {
   BROADCAST = 1 // port postMessage
 }
 
+const jobContentKey = 'job'
 let id = 0
 // 每帧的时间片单元，是每帧时间内用来执行 js 逻辑的最长时长，任务
 // 连续执行超过时间片单元，就需要中断执行把主线程让给优先级更高的任务
@@ -95,17 +107,13 @@ let currentJobNode: JobNode | void
 const jobListRoot: JobNode = {
   isRoot: true,
   type: JobListTypes.JOB_LIST,
-  job: null,
-  previous: null,
-  next: null
+  ...genBaseListNode(null, jobContentKey)
 }
 // 备选任务执行队列
 const backupListRoot: JobNode = {
   isRoot: true,
   type: JobListTypes.BACKUP_LIST,
-  job: null,
-  previous: null,
-  next: null
+  ...genBaseListNode(null, jobContentKey)
 }
 
 export function genCurrentTime(): number {
@@ -174,8 +182,21 @@ export function registerJob(
   job.options = job.options || options
   job.controller = createJobControllers(job, jobListRoot)
 
+  // 为祖先任务创建子任务快照
+  if (__DEV__) {
+    createSnapshotForAncestor(job)
+  }
+
   assignJob(job)
   return job
+}
+
+// 为祖先任务创建快照容器
+export function createSnapshotForAncestor(job: Job) {
+  job.scopedSnapshot = genBaseListNode(null, jobContentKey)
+  // 创建快照双向循环链表，便于进行尾部节点的访问，省去遍历节点的开销
+  job.scopedSnapshot.next = job.scopedSnapshot
+  job.scopedSnapshot.previous = job.scopedSnapshot
 }
 
 // 调度系统的执行者
@@ -354,16 +375,35 @@ export function invokeJob(jobNode: JobNode): Job | null {
   const job = jobNode.job
   if (isFunction(job)) {
     const childJob: Job | void = job(job.controller)
+
+    // 将当前已执行完的子任务添加进快照
+    if (__DEV__) {
+      const currentNode = genBaseListNode(job, jobContentKey)
+      const lastNode = job.scopedSnapshot.previous
+      lastNode.next = currentNode
+      currentNode.previous = lastNode
+      currentNode.next = job.scopedSnapshot
+      job.scopedSnapshot.previous = currentNode
+    }
+
     if (isFunction(childJob)) {
       const { isDeepFirst } = job.options
       // 根据任务是否深度优先执行分别进行处理
       if (isDeepFirst) {
         // 深度优先执行子任务
         jobNode.job = childJob
+
+        // 将快照信息拷贝到子任务上，保证执行子任务时能访问到
+        // 正确的快照链表信息
+        if (__DEV__) {
+          childJob.scopedSnapshot = job.scopedSnapshot
+        }
+
         return childJob
       }
       // 子任务作为新任务重新注册入队
-      return (registerJob(childJob), null)
+      registerJob(childJob)
+      return null
     }
     
     // 无子任务

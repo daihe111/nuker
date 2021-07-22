@@ -63,6 +63,7 @@ export const JobTimeouts = {
 export interface JobOptions {
   isDeepFirst?: boolean // 任务执行是否遵循深度优先规则
   expireStrategy?: number // 过期任务的处理策略
+  openSnapshot?: boolean // 是否开启任务单元执行快照
 }
 
 // 任务控制器
@@ -183,7 +184,7 @@ export function registerJob(
   job.controller = createJobControllers(job, jobListRoot)
 
   // 为祖先任务创建子任务快照
-  if (__DEV__) {
+  if (__DEV__ && options.openSnapshot) {
     createSnapshotForAncestor(job)
   }
 
@@ -377,7 +378,7 @@ export function invokeJob(jobNode: JobNode): Job | null {
     const childJob: Job | void = job(job.controller)
 
     // 将当前已执行完的子任务添加进快照
-    if (__DEV__) {
+    if (__DEV__ && job.scopedSnapshot) {
       const currentNode = genBaseListNode(job, jobContentKey)
       const lastNode = job.scopedSnapshot.previous
       lastNode.next = currentNode
@@ -395,7 +396,7 @@ export function invokeJob(jobNode: JobNode): Job | null {
 
         // 将快照信息拷贝到子任务上，保证执行子任务时能访问到
         // 正确的快照链表信息
-        if (__DEV__) {
+        if (__DEV__ && job.scopedSnapshot) {
           childJob.scopedSnapshot = job.scopedSnapshot
         }
 

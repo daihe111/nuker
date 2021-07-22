@@ -85,7 +85,6 @@ export const enum MacrotaskTypes {
   BROADCAST = 1 // port postMessage
 }
 
-const jobContentKey = 'job'
 let id = 0
 // 每帧的时间片单元，是每帧时间内用来执行 js 逻辑的最长时长，任务
 // 连续执行超过时间片单元，就需要中断执行把主线程让给优先级更高的任务
@@ -107,14 +106,12 @@ let currentJobNode: JobNode | void
 // 执行队列
 const jobListRoot: JobNode = {
   isRoot: true,
-  type: JobListTypes.JOB_LIST,
-  ...genBaseListNode(null, jobContentKey)
+  ...createJobNode(null, JobListTypes.JOB_LIST)
 }
 // 备选任务执行队列
 const backupListRoot: JobNode = {
   isRoot: true,
-  type: JobListTypes.BACKUP_LIST,
-  ...genBaseListNode(null, jobContentKey)
+  ...createJobNode(null, JobListTypes.BACKUP_LIST)
 }
 
 export function genCurrentTime(): number {
@@ -485,12 +482,11 @@ export function createMacrotask(
   }
 }
 
-export function createJobNode(job: Job, type: string | number): JobNode {
+// 创建任务节点
+export function createJobNode(job: Job, type?: string | number): JobNode {
   return {
     type,
-    job,
-    previous: null,
-    next: null
+    ...genBaseListNode(job, 'job')
   }
 }
 

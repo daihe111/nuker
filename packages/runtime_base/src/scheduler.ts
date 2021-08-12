@@ -13,8 +13,8 @@ import {
 
 export interface Job {
   (...args: any[]): Job | void
-  id: number | string
-  controller: JobControllers
+  id?: number | string
+  controller?: JobControllers
   priority?: number
   birth?: number
   startTime?: number

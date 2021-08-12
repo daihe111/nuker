@@ -1,48 +1,55 @@
 import {
-  isReservedTag,
-  isReservedComponentTag
-} from '@nuker/domOptions';
+  VNodeCore,
+  VNodeProps
+} from "./vnode"
+import { BaseListNode } from "../../share/src/shareTypes"
 
-export type VNodeTag = | string | void
+export const IS_CHIP = Symbol()
 
-export interface VNodeProps {
-  key?: string | number,
-  ref?: string
+export interface ChipInstance {
+
 }
 
-export interface VNodeChildren {
-  
+export interface ChipRef {
+
 }
 
-export type VNodeRef = | string
-
-export const enum VNodeFlags {
-  IS_VNODE = '__n_isVNode'
+export interface ChipEffectUnit extends BaseListNode {
+  effect: Function
 }
 
-export interface VNode {
-  [VNodeFlags.IS_VNODE]: true
-
-  tag: VNodeTag
-  props: VNodeProps
-  children: VNodeChildren
+export interface Chip extends VNodeCore {
+  [IS_CHIP]: true
 
   id: number // 节点编号 id (自增)
-  elm: unknown
-  ref: VNodeRef
+  hostNode: unknown
+  ref: ChipRef
   key: string | number | symbol
-  vnodeType: number
-  instance: unknown
-  directives: unknown
-  components: unknown
+  instance: ChipInstance | null
+  directives?: unknown
+  components?: unknown
+  level?: number // 当前 chip 节点在树中所处层级标记
 
-  // 节点指针
-  parent: VNode | null
-  prevSibling?: VNode
-  nextSibling: VNode | null
-  firstChild: VNode | null
+  // pointers
+  // chip 树中仅包含动态节点，在生成 chip 树时会将 dom 树
+  // 中存在动态内容的节点连接成一颗 chip 链表树
+  parent: Chip
+  prevSibling: Chip | null
+  nextSibling: Chip | null
+  firstChild: Chip | null
+  // 连接存在映射关系的新旧 chip 节点的通道指针
+  wormhole: Chip | null
 
-  patchFlag: number
+  // flags
+  compileFlags?: number
+  // 标记当前 chip 节点在 commit 阶段需要触发的 effect
+  effectFlags: number
+
+  effects: ChipEffectUnit | null
+}
+
+export interface ChipRoot extends Chip {
+  hasMounted: boolean
 }
 
 export const enum VNodeTypes {

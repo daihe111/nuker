@@ -3,6 +3,7 @@ import {
   VNodeProps
 } from "./vnode"
 import { BaseListNode } from "../../share/src/shareTypes"
+import { ComponentInstance } from "./component"
 
 export const IS_CHIP = Symbol()
 
@@ -25,7 +26,7 @@ export interface Chip extends VNodeCore {
   hostNode: unknown
   ref: ChipRef
   key: string | number | symbol
-  instance: ChipInstance | null
+  instance: ComponentInstance | null
   directives?: unknown
   components?: unknown
   level?: number // 当前 chip 节点在树中所处层级标记

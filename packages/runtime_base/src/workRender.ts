@@ -85,7 +85,7 @@ export function createChipFromVNode(vnode: VNode): Chip | null {
 }
 
 // TODO 如何收集动态节点？数据更新时如何生成新的动态节点链表？
-// 是否可以避开组件粒度全量子树的 re-create ？
+// 是否可以避开组件粒度全量子树的 re-create ?
 
 export function handleComponentChip(chip: Chip): void {
   const instance = chip.instance

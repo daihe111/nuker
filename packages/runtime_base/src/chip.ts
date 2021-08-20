@@ -1,9 +1,11 @@
 import {
   VNodeCore,
-  VNodeProps
+  VNodeProps,
+  VNode
 } from "./vnode"
 import { BaseListNode } from "../../share/src/shareTypes"
 import { ComponentInstance } from "./component"
+import { isObject } from "../../share/src"
 
 export const IS_CHIP = Symbol()
 
@@ -19,6 +21,14 @@ export interface ChipEffectUnit extends BaseListNode {
   effect: Function
 }
 
+export const enum ChipPhases {
+  PENDING = 0,
+  INITIALIZE = 1,
+  GEN_EFFECT = 2
+}
+
+export type ChipUnit = Chip | VNode | null
+
 export interface Chip extends VNodeCore {
   [IS_CHIP]: true
 
@@ -30,18 +40,22 @@ export interface Chip extends VNodeCore {
   directives?: unknown
   components?: unknown
   level?: number // 当前 chip 节点在树中所处层级标记
+  // 当前已转化为 chip 的 VNode child 索引，用于辅助 chip 树
+  // 遍历过程中动态创建新的 chip
+  currentIndex?: number
 
   // pointers
   // chip 树中仅包含动态节点，在生成 chip 树时会将 dom 树
   // 中存在动态内容的节点连接成一颗 chip 链表树
   parent: Chip
-  prevSibling: Chip | null
-  nextSibling: Chip | null
-  firstChild: Chip | null
+  prevSibling: ChipUnit
+  nextSibling: ChipUnit
+  firstChild: ChipUnit
   // 连接存在映射关系的新旧 chip 节点的通道指针
-  wormhole: Chip | null
+  wormhole: ChipUnit
 
   // flags
+  phase?: number
   compileFlags?: number
   // 标记当前 chip 节点在 commit 阶段需要触发的 effect
   effectFlags: number
@@ -53,71 +67,15 @@ export interface ChipRoot extends Chip {
   hasMounted: boolean
 }
 
-export const enum VNodeTypes {
-  INVALID_NODE = -1,
-  NATIVE_DOM = 0,
-  RESERVED_COMPONENT = 1,
-  CUSTOM_COMPONENT = 2
-}
-
-export const VNodeTypeNames = {
-  [VNodeTypes.INVALID_NODE]: 'INVALID_NODE',
-  [VNodeTypes.NATIVE_DOM]: 'NATIVE_DOM',
-  [VNodeTypes.RESERVED_COMPONENT]: 'RESERVED_COMPONENT',
-  [VNodeTypes.CUSTOM_COMPONENT]: 'CUSTOM_COMPONENT'
-}
-
-export function parseVNodeType(tag: VNodeTag): number {
-  if (typeof tag === 'string') {
-    if (isReservedTag(tag)) {
-      return VNodeTypes.NATIVE_DOM
-    }
-    return VNodeTypes.INVALID_NODE
-  } else if (typeof tag === 'object') {
-    if (isReservedComponentTag(tag)) {
-      return VNodeTypes.RESERVED_COMPONENT
-    }
-    return VNodeTypes.CUSTOM_COMPONENT
+// 在触发源数据变化时触发 chip 更新，nuker 复用一颗 chip tree
+export function updateChip(chip: Chip, payload: object): Chip {
+  if (isObject(payload)) {
+    // update chip from payload
   }
-  return VNodeTypes.INVALID_NODE
+
+  return null
 }
 
-export function cloneVNode(vnode: VNode, props: object, children: VNodeChildren) {
-  return Object.assign({}, {
-    tag: vnode.tag,
-    data: Object.assign({}, vnode.data),
-    key: vnode.key,
-    children: Object.assign({}, vnode.children),
-    parent: vnode.parent,
-    elm: vnode.elm,
-    isComponent: vnode.isComponent
-  });
-}
+export function removeChip(chip: Chip): boolean {
 
-export function isSameVNode(vn1: VNode, vn2: VNode) {
-  return vn1.tag === vn2.tag && vn1.key === vn2.key;
-}
-
-export function createVNode(
-  tag: VNodeTag,
-  props?: VNodeProps,
-  children?: VNodeChildren,
-  patchFlag?: number
-): VNode {
-  const vnodeType = parseVNodeType(tag)
-  return {
-    tag,
-    props,
-    children,
-    patchFlag,
-    elm: null,
-    ref: null,
-    vnodeType,
-    instance: null,
-    directives: [],
-    components: [],
-
-    parent: null,
-    nextSibling: null
-  }
 }

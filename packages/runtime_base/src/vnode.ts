@@ -2,6 +2,7 @@ import {
   isReservedTag,
   isReservedComponentTag
 } from '@nuker/domOptions';
+import { isObject, isArray, isString, isNumber } from '../../share/src';
 
 export type VNodeTag = | string | void
 
@@ -89,6 +90,20 @@ export function cloneVNode(vnode: VNode, props: object, children: VNodeChildren)
 
 export function isSameVNode(vn1: VNode, vn2: VNode) {
   return vn1.tag === vn2.tag && vn1.key === vn2.key;
+}
+
+export function getFirstVNodeChild(children: VNodeChildren): VNode {
+  if (isObject(children)) {
+    // single child
+    return (children as VNode)
+  } else if (isArray(children)) {
+    // array children
+    return children[0] ? children[0] : null
+  } else if (isString(children) || isNumber(children)) {
+    // base text child
+  } else {
+    return null
+  }
 }
 
 export function createVNode(

@@ -42,7 +42,7 @@ export interface Chip extends VNodeCore {
   level?: number // 当前 chip 节点在树中所处层级标记
   // 当前已转化为 chip 的 VNode child 索引，用于辅助 chip 树
   // 遍历过程中动态创建新的 chip
-  currentIndex?: number
+  currentChildIndex?: number
 
   // pointers
   // chip 树中仅包含动态节点，在生成 chip 树时会将 dom 树
@@ -57,14 +57,14 @@ export interface Chip extends VNodeCore {
   // flags
   phase?: number
   compileFlags?: number
-  // 标记当前 chip 节点在 commit 阶段需要触发的 effect
+  // 标记当前 chip 节点在 commit 阶段需要触发的 effect 类型
   effectFlags: number
-
-  effects: ChipEffectUnit | null
 }
 
 export interface ChipRoot extends Chip {
   hasMounted: boolean
+  // 整颗 chip 树生成的全部副作用构成的链表队列 (按照由子到父的顺序)
+  effects: ChipEffectUnit | null
 }
 
 // 在触发源数据变化时触发 chip 更新，nuker 复用一颗 chip tree

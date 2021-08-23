@@ -9,6 +9,8 @@ const dynamicChipKey = Symbol()
 const dynamicChipList = genBaseListNode(null, dynamicChipKey)
 // 正在进行中的 chip 节点
 let ongoingChip: ChipUnit = null
+// 当前正在执行渲染工作的组件 instance
+let currentRenderingInstance: ComponentInstance = null
 
 // update types: 
 // unstable dom (if-structure, for-structure)
@@ -44,33 +46,41 @@ export function workChips(chipRoot: ChipRoot) {
   }
 }
 
-export function registerOngoingChipWork(chip: Chip) {
+export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip) {
   ongoingChip = chip
   registerJob(() => {
     // get next chip to working
-    const next = performChipWork(chip)
-    registerOngoingChipWork(next)
+    const next = performChipWork(chipRoot, chip)
+    registerOngoingChipWork(chipRoot, next)
   })
 }
 
 // chip unit work 执行
-export function performChipWork(chip: Chip): Chip {
+export function performChipWork(chipRoot: ChipRoot, chip: Chip): Chip {
   if (chip === null) {
     return null
   }
 
-  prepareRenderWorkForChip(chip)
+  if (chip.phase === ChipPhases.PENDING) {
+    // 首次遍历处理当前 chip 节点
+    prepareRenderWorkForChip(chip)
+    chip.phase = ChipPhases.INITIALIZE
 
-  let firstChild = chip.firstChild
-  if (!firstChild) {
-    const firstVNodeChild = getFirstVNodeChild(chip.children)
-    chip.firstChild = firstChild = createChipFromVNode(firstVNodeChild)
-    if (firstChild) {
-      firstChild.parent = chip
-      return firstChild
-    } else {
-      return completeChip(chip)
+    let firstChild = chip.firstChild
+    if (!firstChild) {
+      const firstVNodeChild = getFirstVNodeChild(chip.children)
+      chip.firstChild = firstChild = createChipFromVNode(firstVNodeChild)
+      if (firstChild) {
+        firstChild.parent = chip
+        chip.currentChildIndex = 0
+        return firstChild
+      } else {
+        return completeChip(chipRoot, chip)
+      }
     }
+  } else if (chip.phase === ChipPhases.INITIALIZE) {
+    // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
+    mountMutableEffect(chipRoot, chip)
   }
 }
 
@@ -91,7 +101,7 @@ export function traverseChipTree(parent: Chip, children?: VNodeChildren): void {
   
 }
 
-// 为当前 chip 提供可供渲染用的相关准备工作
+// 为当前 chip 执行可供渲染用的相关准备工作
 export function prepareRenderWorkForChip(chip: Chip) {
   switch (chip.unitType) {
     case VNodeTypes.CUSTOM_COMPONENT:
@@ -101,20 +111,20 @@ export function prepareRenderWorkForChip(chip: Chip) {
 
 // chip 是 leaf node，完成对该节点的所有处理工作，并标记为 complete
 // 返回下一个要处理的 chip 节点
-export function completeChip(chip: Chip): Chip {
+export function completeChip(chipRoot: ChipRoot, chip: Chip): Chip {
   chip.phase = ChipPhases.COMPLETE
-  mountMutationPayload()
+  mountMutableEffect(chipRoot, chip)
   let sibling = chip.nextSibling
   if (sibling === null) {
     // finish dive and start swim to handle sibling node
     const parent = chip.parent
-    const nextVNodeChild: VNode = parent.children[parent.currentIndex + 1]
+    const nextVNodeChild: VNode = parent.children[parent.currentChildIndex + 1]
     if (nextVNodeChild[VNodeFlags.IS_VNODE]) {
       // 当前 chip 有有效的兄弟节点
       sibling = chip.nextSibling = createChipFromVNode(nextVNodeChild)
       sibling.prevSibling = chip
       sibling.parent = parent
-      parent.currentIndex++
+      parent.currentChildIndex++
       return sibling
     } else {
       // 无有效兄弟节点，且当前 chip 已处理完毕，开始进入 bubble 阶段，
@@ -126,8 +136,8 @@ export function completeChip(chip: Chip): Chip {
   }
 }
 
-// 依赖收集，挂载视图更新 payload
-export function mountMutationPayload() {
+// 依赖收集，挂载触发视图改变的 payload
+export function mountMutableEffect(chipRoot: ChipRoot, chip: Chip) {
 
 }
 
@@ -142,7 +152,7 @@ export function handleComponentChip(chip: Chip): void {
   const instance = chip.instance
   if (instance === null) {
     // first mount 创建组件类型 chip 对应的 instance
-    chip.instance = createComponentInstance((chip.tag as Component), chip)
+    currentRenderingInstance = chip.instance = createComponentInstance((chip.tag as Component), chip)
     // mount component
     mountComponent()
   } else {

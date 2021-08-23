@@ -24,7 +24,7 @@ export interface ChipEffectUnit extends BaseListNode {
 export const enum ChipPhases {
   PENDING = 0,
   INITIALIZE = 1,
-  GEN_EFFECT = 2
+  COMPLETE = 2
 }
 
 export type ChipUnit = Chip | VNode | null

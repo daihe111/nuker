@@ -102,23 +102,28 @@ export function prepareRenderWorkForChip(chip: Chip) {
 // chip 是 leaf node，完成对该节点的所有处理工作，并标记为 complete
 // 返回下一个要处理的 chip 节点
 export function completeChip(chip: Chip): Chip {
-  chip.phase = ChipPhases.GEN_EFFECT
+  chip.phase = ChipPhases.COMPLETE
   mountMutationPayload()
   let sibling = chip.nextSibling
   if (sibling === null) {
-
-  } else if (sibling[VNodeFlags.IS_VNODE]) {
-    sibling = chip.nextSibling = createChipFromVNode(sibling as VNode)
-    sibling.prevSibling = chip
+    // finish dive and start swim to handle sibling node
+    const parent = chip.parent
+    const nextVNodeChild: VNode = parent.children[parent.currentIndex + 1]
+    if (nextVNodeChild[VNodeFlags.IS_VNODE]) {
+      // 当前 chip 有有效的兄弟节点
+      sibling = chip.nextSibling = createChipFromVNode(nextVNodeChild)
+      sibling.prevSibling = chip
+      sibling.parent = parent
+      parent.currentIndex++
+      return sibling
+    } else {
+      // 无有效兄弟节点，且当前 chip 已处理完毕，开始进入 bubble 阶段，
+      // 回溯父节点
+      return parent
+    }
+  } else {
+    return (sibling as Chip)
   }
-  // ongoingChip = chip
-  // while (ongoingChip !== null) {
-  //   const firstChild = ongoingChip.firstChild
-  //   if (firstChild) {
-
-  //   }
-  //   ongoingChip = ongoingChip.nextSibling
-  // }
 }
 
 // 依赖收集，挂载视图更新 payload

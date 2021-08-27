@@ -4,6 +4,11 @@ import { VNode, VNodeChildren, VNodeTypes, VNodeFlags, getFirstVNodeChild } from
 import { registerJob } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 
+export const enum RenderModes {
+  SYNCHRONOUS = 0,
+  CONCURRENT = 1
+}
+
 const dynamicChipKey = Symbol()
 // 包含动态内容的 chip 链表
 const dynamicChipList = genBaseListNode(null, dynamicChipKey)
@@ -33,17 +38,17 @@ let currentRenderingInstance: ComponentInstance = null
 // 首次渲染：有向图 chip 节点遍历，产生的任务：渲染准备、update payload
 // 更新：渲染信息更新 (instance, data source...)、update payload (保证由子到父倒序执行，离屏渲染)
 
-// 触发 chip list 的遍历执行
-export function workChips(chipRoot: ChipRoot) {
-  const hasMounted: boolean = chipRoot.hasMounted
-  if (!hasMounted) {
-    // first mount
-    // traverseChipTree(chipRoot)
-    workChipsByFirstMount(chipRoot)
-  } else {
-    // update
-    workChipsByUpdate(chipRoot)
+// 同步执行任务循环
+export function workLoopSync(chipRoot: ChipRoot, chip: Chip) {
+  ongoingChip = chip
+  while (ongoingChip !== null) {
+    ongoingChip = performChipWork(chipRoot, ongoingChip)
   }
+}
+
+// 以异步可调度的方式执行任务循环
+export function workLoopConcurrent(chipRoot: ChipRoot, chip: Chip) {
+  registerOngoingChipWork(chipRoot, chip)
 }
 
 export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip) {
@@ -80,7 +85,7 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip): Chip {
     }
   } else if (chip.phase === ChipPhases.INITIALIZE) {
     // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
-    mountMutableEffect(chipRoot, chip)
+    genMutableEffects(chipRoot, chip)
   }
 }
 
@@ -113,7 +118,7 @@ export function prepareRenderWorkForChip(chip: Chip) {
 // 返回下一个要处理的 chip 节点
 export function completeChip(chipRoot: ChipRoot, chip: Chip): Chip {
   chip.phase = ChipPhases.COMPLETE
-  mountMutableEffect(chipRoot, chip)
+  genMutableEffects(chipRoot, chip)
   let sibling = chip.nextSibling
   if (sibling === null) {
     // finish dive and start swim to handle sibling node
@@ -136,9 +141,26 @@ export function completeChip(chipRoot: ChipRoot, chip: Chip): Chip {
   }
 }
 
-// 依赖收集，挂载触发视图改变的 payload
-export function mountMutableEffect(chipRoot: ChipRoot, chip: Chip) {
+// 依赖收集，生成触发 dom 实际变化的副作用:
+// 1. 首次渲染: 不会生成渲染描述，而是直接通过 chip 中的信息
+//    进行 dom 的实际渲染
+// 2. 更新阶段: 会先生成节点对应的更新渲染描述 payload，因为
+//    非首次渲染时 reconcile 任务不再是优先级最高的任务，因为
+//    有可能会有优先级更高的任务插入 (如 user event)，因此
+//    更新阶段的纯 js 任务需要接入调度系统，然后所有的 dom 操作
+//    在 commit 阶段进行批量同步执行
+export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) {
+  switch (mode) {
+    case RenderModes.SYNCHRONOUS:
 
+      break
+    case RenderModes.CONCURRENT:
+
+      break
+    default:
+      // an nuker bug maybe has occurred
+      break
+  }
 }
 
 export function createChipFromVNode(vnode: VNode): Chip | null {

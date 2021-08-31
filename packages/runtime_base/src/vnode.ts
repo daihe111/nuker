@@ -23,6 +23,8 @@ export interface VNodeCore {
   tag: VNodeTag
   unitType: number
   props: VNodeProps
+  isSVG?: boolean
+  is?: boolean
   children?: VNodeChildren
 }
 
@@ -47,33 +49,35 @@ export interface VNode extends VNodeCore {
   patchFlag: number
 }
 
-export const enum VNodeTypes {
+export const enum UnitTypes {
   INVALID_NODE = -1,
   NATIVE_DOM = 0,
   RESERVED_COMPONENT = 1,
-  CUSTOM_COMPONENT = 2
+  CUSTOM_COMPONENT = 2,
+  CONDITION = 3,
+  FRAGMENT = 4
 }
 
 export const VNodeTypeNames = {
-  [VNodeTypes.INVALID_NODE]: 'INVALID_NODE',
-  [VNodeTypes.NATIVE_DOM]: 'NATIVE_DOM',
-  [VNodeTypes.RESERVED_COMPONENT]: 'RESERVED_COMPONENT',
-  [VNodeTypes.CUSTOM_COMPONENT]: 'CUSTOM_COMPONENT'
+  [UnitTypes.INVALID_NODE]: 'INVALID_NODE',
+  [UnitTypes.NATIVE_DOM]: 'NATIVE_DOM',
+  [UnitTypes.RESERVED_COMPONENT]: 'RESERVED_COMPONENT',
+  [UnitTypes.CUSTOM_COMPONENT]: 'CUSTOM_COMPONENT'
 }
 
 export function parseVNodeType(tag: VNodeTag): number {
   if (typeof tag === 'string') {
     if (isReservedTag(tag)) {
-      return VNodeTypes.NATIVE_DOM
+      return UnitTypes.NATIVE_DOM
     }
-    return VNodeTypes.INVALID_NODE
+    return UnitTypes.INVALID_NODE
   } else if (typeof tag === 'object') {
     if (isReservedComponentTag(tag)) {
-      return VNodeTypes.RESERVED_COMPONENT
+      return UnitTypes.RESERVED_COMPONENT
     }
-    return VNodeTypes.CUSTOM_COMPONENT
+    return UnitTypes.CUSTOM_COMPONENT
   }
-  return VNodeTypes.INVALID_NODE
+  return UnitTypes.INVALID_NODE
 }
 
 export function cloneVNode(vnode: VNode, props: object, children: VNodeChildren) {

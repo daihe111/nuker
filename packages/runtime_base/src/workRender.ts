@@ -1,8 +1,9 @@
 import { Chip, ChipRoot, ChipUnit, ChipPhases } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject } from "../../share/src";
-import { VNode, VNodeChildren, VNodeTypes, VNodeFlags, getFirstVNodeChild } from "./vnode";
+import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild } from "./vnode";
 import { registerJob } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
+import { domOptions } from "./domOptions";
 
 export const enum RenderModes {
   SYNCHRONOUS = 0,
@@ -68,7 +69,7 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip): Chip {
 
   if (chip.phase === ChipPhases.PENDING) {
     // 首次遍历处理当前 chip 节点
-    prepareRenderWorkForChip(chip)
+    initRenderWorkForChip(chip)
     chip.phase = ChipPhases.INITIALIZE
 
     let firstChild = chip.firstChild
@@ -107,10 +108,14 @@ export function traverseChipTree(parent: Chip, children?: VNodeChildren): void {
 }
 
 // 为当前 chip 执行可供渲染用的相关准备工作
-export function prepareRenderWorkForChip(chip: Chip) {
+export function initRenderWorkForChip(chip: Chip) {
   switch (chip.unitType) {
-    case VNodeTypes.CUSTOM_COMPONENT:
-      handleComponentChip(chip)
+    case UnitTypes.CUSTOM_COMPONENT:
+      initRenderWorkForComponent(chip)
+      break
+    case UnitTypes.NATIVE_DOM:
+      initRenderWorkForElement(chip)
+      break
   }
 }
 
@@ -152,7 +157,7 @@ export function completeChip(chipRoot: ChipRoot, chip: Chip): Chip {
 export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) {
   switch (mode) {
     case RenderModes.SYNCHRONOUS:
-
+      mountChip(chipRoot, chip)
       break
     case RenderModes.CONCURRENT:
 
@@ -167,10 +172,8 @@ export function createChipFromVNode(vnode: VNode): Chip | null {
   return
 }
 
-// TODO 如何收集动态节点？数据更新时如何生成新的动态节点链表？
-// 是否可以避开组件粒度全量子树的 re-create ?
-
-export function handleComponentChip(chip: Chip): void {
+// 初始化 component 类型节点的渲染工作
+export function initRenderWorkForComponent(chip: Chip): void {
   const instance = chip.instance
   if (instance === null) {
     // first mount 创建组件类型 chip 对应的 instance
@@ -181,4 +184,42 @@ export function handleComponentChip(chip: Chip): void {
     // 复用已经存在的 instance
     chip.instance = reuseComponentInstance(instance, chip)
   }
+}
+
+// 初始化 element 类型节点的渲染工作
+export function initRenderWorkForElement(chip: Chip) {
+  const { tag, isSVG, is, props } = chip
+  chip.elm = domOptions.createElement(tag, isSVG, is, props)
+}
+
+export function completeRenderWorkForElement(chip: Chip) {
+  const parentElm = chip.parent.elm
+  if (parentElm) {
+    parentElm.appendChild(chip.elm)
+  }
+}
+
+// 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
+export function mountChip(chipRoot: ChipRoot, chip: Chip): void {
+  switch (chip.unitType) {
+    case UnitTypes.NATIVE_DOM:
+      mountElement(chipRoot, chip)
+      break
+    case UnitTypes.CUSTOM_COMPONENT:
+      mountComponent(chipRoot, chip)
+      break
+    case UnitTypes.CONDITION:
+      mountCondition(chipRoot, chip)
+      break
+    case UnitTypes.FRAGMENT:
+      mountFragment(chipRoot, chip)
+      break
+    default:
+      // nuker doesn't have this node type, a bug maybe occurred
+      break
+  }
+}
+
+export function mountElement(chipRoot: ChipRoot, chip: Chip): object {
+  
 }

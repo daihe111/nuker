@@ -28,7 +28,7 @@ export const enum ChipPhases {
 }
 
 export type ChipUnit = Chip | VNode | null
-
+document.createElement
 export interface Chip extends VNodeCore {
   [IS_CHIP]: true
 
@@ -36,6 +36,7 @@ export interface Chip extends VNodeCore {
   hostNode: unknown
   ref: ChipRef
   key: string | number | symbol
+  elm: Node | Element | null
   instance: ComponentInstance | null
   directives?: unknown
   components?: unknown

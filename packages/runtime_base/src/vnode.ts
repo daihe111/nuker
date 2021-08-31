@@ -1,15 +1,17 @@
 import {
   isReservedTag,
   isReservedComponentTag
-} from '@nuker/domOptions';
+} from './domOptions';
 import { isObject, isArray, isString, isNumber } from '../../share/src';
 
 export type VNodeTag = | string | void
 
-export interface VNodeProps {
-  key?: string | number,
-  ref?: string
+export interface VNodePropNode {
+  isDynamic?: boolean
+  value: any
 }
+
+export type VNodeProps = Record<string, VNodePropNode>
 
 export type VNodeChildren = VNode | VNode[]
 

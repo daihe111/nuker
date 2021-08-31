@@ -4,6 +4,7 @@ import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild } from 
 import { registerJob } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
+import { effect } from "../../reactivity/src/effect";
 
 export const enum RenderModes {
   SYNCHRONOUS = 0,
@@ -186,17 +187,43 @@ export function initRenderWorkForComponent(chip: Chip): void {
   }
 }
 
-// 初始化 element 类型节点的渲染工作
+// 初始化 element 类型节点的渲染工作: dom 容器创建
 export function initRenderWorkForElement(chip: Chip) {
-  const { tag, isSVG, is, props } = chip
-  chip.elm = domOptions.createElement(tag, isSVG, is, props)
+  const { tag, isSVG, is } = chip
+  chip.elm = domOptions.createElement(tag, isSVG, is)
 }
 
+// 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
 export function completeRenderWorkForElement(chip: Chip) {
   const parentElm = chip.parent.elm
-  if (parentElm) {
-    parentElm.appendChild(chip.elm)
+  const elm = chip.elm
+  if (parentElm && elm) {
+    parentElm.appendChild(elm)
   }
+
+  // 检索当前 element 节点的属性，当遇到动态属性时，生成对应的依赖 (effect)，
+  // 建立渲染副作用和响应式数据之间的连接关系
+  const { props } = chip
+  const dynamicProps = new Map<string, any>()
+  for (const propName in props) {
+    const { isDynamic, value } = props[propName]
+    if (isDynamic) {
+      // 动态属性处理，创建动态属性集的 runtime 执行器
+      dynamicProps.set(propName, value)
+    } else {
+      // 静态属性
+
+    }
+  }
+
+  // 针对当前 chip 节点创建对应的渲染 effect
+  effect(() => {
+    // collector
+
+  }, () => {
+    // dispatcher
+
+  })
 }
 
 // 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)

@@ -219,19 +219,21 @@ export function completeRenderWorkForElement(chip: Chip) {
   }
 
   // 针对当前 chip 节点的动态属性创建对应的渲染 effect
-  effect<object>(() => {
+  effect<Record<string, any>>(() => {
     // collector: 触发当前注册 effect 的收集行为
-    const dynamicData = {}
+    const renderData: Record<string, any> = {}
     dynamicProps.forEach((val, key) => {
       // 这里访问响应式数据的实际数据，会触发数据的 getter trap，
       // 将当前 effect 收集起来
-      dynamicData[key] = val.value
+      renderData[key] = val.value
     })
-    return dynamicData
-  }, (data: object) => {
-    // dispatcher
-
-    return data
+    return renderData
+  }, (newProps: Record<string, any>) => {
+    // dispatcher: 
+    genUpdatePayload(chip, newProps)
+    return newProps
+  }, {
+    collectOnly: true // 首次仅做依赖收集但不执行派发逻辑
   })
 }
 
@@ -258,4 +260,9 @@ export function mountChip(chipRoot: ChipRoot, chip: Chip): void {
 
 export function mountElement(chipRoot: ChipRoot, chip: Chip): object {
   
+}
+
+// 生成更新描述信息
+export function genUpdatePayload(chip: Chip, newProps: Record<string, any>) {
+
 }

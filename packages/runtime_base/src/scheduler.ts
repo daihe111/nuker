@@ -11,8 +11,8 @@ import {
   BaseListNode
 } from '../../share/src/shareTypes'
 
-export interface Job {
-  (...args: any[]): Job | void
+export interface Job<T = any> {
+  (...args: any[]): T | Job | void
   id?: number | string
   controller?: JobControllers
   priority?: number

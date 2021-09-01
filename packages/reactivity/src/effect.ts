@@ -1,20 +1,21 @@
-import { Job } from "../../runtime_core/src/scheduler"
+import { Job } from "../../runtime_base/src/scheduler"
 
 export interface EffectOptions {
-  lazy?: boolean,
-  scheduler?: (task: unknown) => void,
-  onCollected?: () => void,
-  onDispatched?: () => void,
+  lazy?: boolean // 是否开启惰性模式
+  collectOnly?: boolean // 是否仅触发 effect 收集
+  scheduler?: (task: unknown) => void
+  onCollected?: () => void
+  onDispatched?: () => void
   onRunned?: () => void
 }
 
-export interface Effect<T = any> extends EffectOptions, Job {
-  (): T,
-  isEffect: boolean,
-  id?: number | string,
-  isActive: boolean,
-  stores: Set<Set<Effect>>,
-  collector: () => T,
+export interface Effect<T = any> extends EffectOptions, Job<T> {
+  (): T
+  isEffect: boolean
+  id?: number | string
+  isActive: boolean
+  stores: Set<Set<Effect>>
+  collector: () => T
   dispatcher: (result: T) => T
 }
 
@@ -62,7 +63,7 @@ export function effect<T = any>(
 
 export function createEffect<T = any>(
   collector: () => T,
-  dispatcher: (result: T) => T,
+  dispatcher: (data: T) => T,
   options: EffectOptions = {}
 ): Effect {
   const runner = (effect: Effect): T => {
@@ -75,12 +76,17 @@ export function createEffect<T = any>(
     currentEffect = effectStack[effectStack.length - 1]
     // 不能取值，防止取值时 trap 收集到错误的 effect，仅触发取值外的其他副作用
     disableCollecting()
-    dispatcher(result)
+    
+    if (!options.collectOnly) {
+      // 如果配置了仅做 effect 收集，将不触发 dispatcher 中逻辑的执行
+      dispatcher(result)
+    }
+
     enableCollecting()
     options.onRunned && options.onRunned()
     return result
   }
-  const effect: Effect = () => {
+  const effect: Effect = (): T => {
     if (!effect.isActive) {
       return
     }

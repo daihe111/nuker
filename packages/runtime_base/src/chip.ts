@@ -36,7 +36,7 @@ export interface Chip extends VNodeCore {
   hostNode: unknown
   ref: ChipRef
   key: string | number | symbol
-  elm: Node | Element | null
+  elm: Element | null
   instance: ComponentInstance | null
   directives?: unknown
   components?: unknown

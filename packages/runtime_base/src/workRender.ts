@@ -1,6 +1,6 @@
 import { Chip, ChipRoot, ChipUnit, ChipPhases } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject } from "../../share/src";
-import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild } from "./vnode";
+import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild, VNodePropNode } from "./vnode";
 import { registerJob } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
@@ -201,28 +201,37 @@ export function completeRenderWorkForElement(chip: Chip) {
     parentElm.appendChild(elm)
   }
 
-  // 检索当前 element 节点的属性，当遇到动态属性时，生成对应的依赖 (effect)，
-  // 建立渲染副作用和响应式数据之间的连接关系
-  const { props } = chip
+  // 检索当前 element 节点的属性，区分动态属性和静态属性
+  const props = chip.props
   const dynamicProps = new Map<string, any>()
   for (const propName in props) {
-    const { isDynamic, value } = props[propName]
+    const { isDynamic, value } = (props[propName] as VNodePropNode)
     if (isDynamic) {
-      // 动态属性处理，创建动态属性集的 runtime 执行器
+      // 收集动态属性，动态属性的 value 是 wrapper 化的，避免
+      // 访问属性 value 时是立即执行的
       dynamicProps.set(propName, value)
-    } else {
-      // 静态属性
+    }
 
+    // 将属性插入对应的 dom 节点
+    if (elm) {
+      elm.setAttribute(propName, value.value)
     }
   }
 
-  // 针对当前 chip 节点创建对应的渲染 effect
-  effect(() => {
-    // collector
-
-  }, () => {
+  // 针对当前 chip 节点的动态属性创建对应的渲染 effect
+  effect<object>(() => {
+    // collector: 触发当前注册 effect 的收集行为
+    const dynamicData = {}
+    dynamicProps.forEach((val, key) => {
+      // 这里访问响应式数据的实际数据，会触发数据的 getter trap，
+      // 将当前 effect 收集起来
+      dynamicData[key] = val.value
+    })
+    return dynamicData
+  }, (data: object) => {
     // dispatcher
 
+    return data
   })
 }
 

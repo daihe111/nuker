@@ -6,11 +6,15 @@ import { ComponentInstance, Component, createComponentInstance, reuseComponentIn
 import { domOptions } from "./domOptions";
 import { effect } from "../../reactivity/src/effect";
 
+export type DynamicRenderData = Record<string | number | symbol, any>
+
 export const enum RenderModes {
   SYNCHRONOUS = 0,
   CONCURRENT = 1
 }
 
+// fragment 节点对应的子节点属性
+const fragmentChildrenPropKey = Symbol()
 const dynamicChipKey = Symbol()
 // 包含动态内容的 chip 链表
 const dynamicChipList = genBaseListNode(null, dynamicChipKey)
@@ -44,7 +48,7 @@ let currentRenderingInstance: ComponentInstance = null
 export function workLoopSync(chipRoot: ChipRoot, chip: Chip) {
   ongoingChip = chip
   while (ongoingChip !== null) {
-    ongoingChip = performChipWork(chipRoot, ongoingChip)
+    ongoingChip = performChipWork(chipRoot, ongoingChip, RenderModes.SYNCHRONOUS)
   }
 }
 
@@ -57,13 +61,13 @@ export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip) {
   ongoingChip = chip
   registerJob(() => {
     // get next chip to working
-    const next = performChipWork(chipRoot, chip)
+    const next = performChipWork(chipRoot, chip, RenderModes.CONCURRENT)
     registerOngoingChipWork(chipRoot, next)
   })
 }
 
 // chip unit work 执行
-export function performChipWork(chipRoot: ChipRoot, chip: Chip): Chip {
+export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): Chip {
   if (chip === null) {
     return null
   }
@@ -82,12 +86,12 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip): Chip {
         chip.currentChildIndex = 0
         return firstChild
       } else {
-        return completeChip(chipRoot, chip)
+        return completeChip(chipRoot, chip, mode)
       }
     }
   } else if (chip.phase === ChipPhases.INITIALIZE) {
     // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
-    genMutableEffects(chipRoot, chip)
+    genMutableEffects(chipRoot, chip, mode)
   }
 }
 
@@ -114,17 +118,26 @@ export function initRenderWorkForChip(chip: Chip) {
     case UnitTypes.CUSTOM_COMPONENT:
       initRenderWorkForComponent(chip)
       break
+    case UnitTypes.RESERVED_COMPONENT:
+      initRenderWorkForReservedComponent(chip)
+      break
     case UnitTypes.NATIVE_DOM:
       initRenderWorkForElement(chip)
+      break
+    case UnitTypes.CONDITION:
+      initRenderWorkForCondition(chip)
+      break
+    case UnitTypes.FRAGMENT:
+      initRenderWorkForFragment(chip)
       break
   }
 }
 
 // chip 是 leaf node，完成对该节点的所有处理工作，并标记为 complete
 // 返回下一个要处理的 chip 节点
-export function completeChip(chipRoot: ChipRoot, chip: Chip): Chip {
+export function completeChip(chipRoot: ChipRoot, chip: Chip, mode: number): Chip {
   chip.phase = ChipPhases.COMPLETE
-  genMutableEffects(chipRoot, chip)
+  genMutableEffects(chipRoot, chip, mode)
   let sibling = chip.nextSibling
   if (sibling === null) {
     // finish dive and start swim to handle sibling node
@@ -158,10 +171,10 @@ export function completeChip(chipRoot: ChipRoot, chip: Chip): Chip {
 export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) {
   switch (mode) {
     case RenderModes.SYNCHRONOUS:
-      mountChip(chipRoot, chip)
+      completeRenderWorkForChipSync(chipRoot, chip)
       break
     case RenderModes.CONCURRENT:
-
+      completeRenderWorkForChipConcurrent(chipRoot, chip)
       break
     default:
       // an nuker bug maybe has occurred
@@ -187,10 +200,25 @@ export function initRenderWorkForComponent(chip: Chip): void {
   }
 }
 
+// 初始化 nuker 内置 component 类型节点的渲染工作
+export function initRenderWorkForReservedComponent(chip: Chip): void {
+
+}
+
 // 初始化 element 类型节点的渲染工作: dom 容器创建
 export function initRenderWorkForElement(chip: Chip) {
   const { tag, isSVG, is } = chip
   chip.elm = domOptions.createElement(tag, isSVG, is)
+}
+
+// 初始化 condition 类型节点的渲染工作
+export function initRenderWorkForCondition(chip: Chip): void {
+
+}
+
+// 初始化 fragment 类型节点的渲染工作
+export function initRenderWorkForFragment(chip: Chip): void {
+
 }
 
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
@@ -219,38 +247,52 @@ export function completeRenderWorkForElement(chip: Chip) {
   }
 
   // 针对当前 chip 节点的动态属性创建对应的渲染 effect
-  effect<Record<string, any>>(() => {
+  effect<DynamicRenderData>(() => {
     // collector: 触发当前注册 effect 的收集行为
-    const renderData: Record<string, any> = {}
+    const renderData: DynamicRenderData = {}
     dynamicProps.forEach((val, key) => {
       // 这里访问响应式数据的实际数据，会触发数据的 getter trap，
       // 将当前 effect 收集起来
       renderData[key] = val.value
     })
     return renderData
-  }, (newProps: Record<string, any>) => {
+  }, (newData: DynamicRenderData) => {
     // dispatcher: 
-    genUpdatePayload(chip, newProps)
-    return newProps
+    return genUpdatePayloads(chip, newData)
   }, {
     collectOnly: true // 首次仅做依赖收集但不执行派发逻辑
   })
 }
 
-// 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
-export function mountChip(chipRoot: ChipRoot, chip: Chip): void {
+// 完成 component 类型节点的渲染工作: 当前节点插入父 dom 容器
+export function completeRenderWorkForComponent(chip: Chip) {
+
+}
+
+// 完成 condition 类型节点的渲染工作: 当前节点插入父 dom 容器
+export function completeRenderWorkForCondition(chip: Chip) {
+
+}
+
+// 完成 fragment 类型节点的渲染工作: 当前节点插入父 dom 容器
+export function completeRenderWorkForFragment(chip: Chip) {
+
+}
+
+// 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
+export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): void {
   switch (chip.unitType) {
     case UnitTypes.NATIVE_DOM:
-      mountElement(chipRoot, chip)
+      completeRenderWorkForElement(chip)
       break
     case UnitTypes.CUSTOM_COMPONENT:
-      mountComponent(chipRoot, chip)
+      completeRenderWorkForComponent(chipRoot, chip)
       break
     case UnitTypes.CONDITION:
-      mountCondition(chipRoot, chip)
+      completeRenderWorkForCondition(chipRoot, chip)
       break
     case UnitTypes.FRAGMENT:
-      mountFragment(chipRoot, chip)
+      completeRenderWorkForFragment(chipRoot, chip)
       break
     default:
       // nuker doesn't have this node type, a bug maybe occurred
@@ -258,11 +300,16 @@ export function mountChip(chipRoot: ChipRoot, chip: Chip): void {
   }
 }
 
-export function mountElement(chipRoot: ChipRoot, chip: Chip): object {
-  
+export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Chip): void {
+
 }
 
 // 生成更新描述信息
-export function genUpdatePayload(chip: Chip, newProps: Record<string, any>) {
-
+export function genUpdatePayloads(chip: Chip, renderDataMap: Record<string, any>) {
+  for (const key in renderDataMap) {
+    const renderContent = renderDataMap[key]
+    if (key === fragmentChildrenPropKey) {
+      reconcileChildrenSequence(chip, chip.)
+    }
+  }
 }

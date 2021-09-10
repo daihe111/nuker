@@ -1,16 +1,42 @@
 import { Chip, ChipRoot, ChipUnit, ChipPhases } from "./chip";
-import { genBaseListNode, isArray, isNumber, isString, isObject } from "../../share/src";
+import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction } from "../../share/src";
 import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild, VNodePropNode } from "./vnode";
 import { registerJob } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect } from "../../reactivity/src/effect";
 
-export type DynamicRenderData = Record<string | number | symbol, any>
+export interface ChildrenRenderer {
+  source: any
+  render: (source: any) => VNodeChildren
+}
+
+export interface DynamicRenderData {
+  props: Record<string | number | symbol, any>
+  childrenRenderer: ChildrenRenderer
+}
+
+export interface RenderPayload {
+  type: number
+  container?: Node
+  parentContainer?: Node
+  anchorContainer?: Node | null
+  tag?: string
+  props: Record<string | number | symbol, any>
+  childPayloads?: RenderPayload[] | null
+}
 
 export const enum RenderModes {
   SYNCHRONOUS = 0,
   CONCURRENT = 1
+}
+
+export const enum RenderUpdateTypes {
+  PATCH_PROP = 0,
+  MOUNT = 1,
+  UNMOUNT = 2,
+  REPLACE = 3,
+  MOVE = 4
 }
 
 // fragment 节点对应的子节点属性
@@ -238,6 +264,17 @@ export function completeRenderWorkForElement(chip: Chip) {
       // 收集动态属性，动态属性的 value 是 wrapper 化的，避免
       // 访问属性 value 时是立即执行的
       dynamicProps.set(propName, value)
+
+      // 针对当前 chip 节点的动态属性创建对应的渲染 effect
+      effect<DynamicRenderData>(() => {
+        // collector: 触发当前注册 effect 的收集行为
+        return value.value
+      }, (newData: DynamicRenderData) => {
+        // dispatcher: 响应式数据更新后触发，会
+        return genRenderPayload(chip, newData)
+      }, {
+        collectOnly: true // 首次仅做依赖收集但不执行派发逻辑
+      })
     }
 
     // 将属性插入对应的 dom 节点
@@ -245,23 +282,6 @@ export function completeRenderWorkForElement(chip: Chip) {
       elm.setAttribute(propName, value.value)
     }
   }
-
-  // 针对当前 chip 节点的动态属性创建对应的渲染 effect
-  effect<DynamicRenderData>(() => {
-    // collector: 触发当前注册 effect 的收集行为
-    const renderData: DynamicRenderData = {}
-    dynamicProps.forEach((val, key) => {
-      // 这里访问响应式数据的实际数据，会触发数据的 getter trap，
-      // 将当前 effect 收集起来
-      renderData[key] = val.value
-    })
-    return renderData
-  }, (newData: DynamicRenderData) => {
-    // dispatcher: 
-    return genUpdatePayloads(chip, newData)
-  }, {
-    collectOnly: true // 首次仅做依赖收集但不执行派发逻辑
-  })
 }
 
 // 完成 component 类型节点的渲染工作: 当前节点插入父 dom 容器
@@ -286,13 +306,13 @@ export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): v
       completeRenderWorkForElement(chip)
       break
     case UnitTypes.CUSTOM_COMPONENT:
-      completeRenderWorkForComponent(chipRoot, chip)
+      completeRenderWorkForComponent(chip)
       break
     case UnitTypes.CONDITION:
-      completeRenderWorkForCondition(chipRoot, chip)
+      completeRenderWorkForCondition(chip)
       break
     case UnitTypes.FRAGMENT:
-      completeRenderWorkForFragment(chipRoot, chip)
+      completeRenderWorkForFragment(chip)
       break
     default:
       // nuker doesn't have this node type, a bug maybe occurred
@@ -304,12 +324,45 @@ export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Ch
 
 }
 
+// 创建渲染信息描述 payload
+export function createRenderPayload(
+  tag: string,
+  props: Record<string | number | symbol, any>,
+  childPayloads: RenderPayload[],
+  container: Node,
+  parentContainer: Node,
+  anchorContainer: Node | null,
+  type: number
+): RenderPayload {
+  return {
+    type,
+    tag,
+    props,
+    childPayloads,
+    container,
+    parentContainer,
+    anchorContainer
+  }
+}
+
 // 生成更新描述信息
-export function genUpdatePayloads(chip: Chip, renderDataMap: Record<string, any>) {
-  for (const key in renderDataMap) {
-    const renderContent = renderDataMap[key]
-    if (key === fragmentChildrenPropKey) {
-      reconcileChildrenSequence(chip, chip.)
+export function genRenderPayload(chip: Chip, renderData: DynamicRenderData): RenderPayload {
+  // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 vnode
+  // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
+  // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
+  const { props, childrenRenderer } = renderData
+  const { elm, tag } = chip
+  let childPayloads = null;
+  let type = RenderUpdateTypes.PATCH_PROP
+  if (isObject(childrenRenderer)) {
+    // 处理动态子节点，生成动态子节点的 renderPayload
+    const { source, render } = childrenRenderer
+    if (isFunction(render)) {
+      const oldChildren: VNodeChildren = chip.children
+      const newChildren: VNodeChildren = render(source)
+      childPayloads = reconcileChildrenSequence(oldChildren, newChildren)
     }
   }
+
+  return createRenderPayload(tag as string, props, childPayloads, elm, chip.parent.elm, null, type)
 }

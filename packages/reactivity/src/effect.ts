@@ -16,7 +16,7 @@ export interface Effect<T = any> extends EffectOptions, Job<T> {
   isActive: boolean
   stores: Set<Set<Effect>>
   collector: () => T
-  dispatcher: (result: T) => T
+  dispatcher: (result: T) => unknown
 }
 
 export const enum CollectingFlags {
@@ -51,7 +51,7 @@ let collectingFlag = CollectingFlags.COLLECTING_OPENED
 // 收集时需要做什么，派发时需要做什么
 export function effect<T = any>(
   collector: () => T, // 传入 collector 旨在保证拦截器收集到正确的 effect，防止收集到与数据不对应的 effect
-  dispatcher: (data: T) => T,
+  dispatcher: (data: T) => unknown,
   options: EffectOptions = {}
 ): Effect {
   const effect: Effect = createEffect(collector, dispatcher, options)

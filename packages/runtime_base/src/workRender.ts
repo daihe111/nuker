@@ -1,7 +1,7 @@
 import { Chip, ChipRoot, ChipUnit, ChipPhases } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction } from "../../share/src";
 import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild, VNodePropNode } from "./vnode";
-import { registerJob } from "./scheduler";
+import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect } from "../../reactivity/src/effect";
@@ -33,10 +33,11 @@ export const enum RenderModes {
 
 export const enum RenderUpdateTypes {
   PATCH_PROP = 0,
-  MOUNT = 1,
-  UNMOUNT = 2,
-  REPLACE = 3,
-  MOVE = 4
+  PATCH_CHILDREN = 1,
+  MOUNT = 2,
+  UNMOUNT = 3,
+  REPLACE = 4,
+  MOVE = 5
 }
 
 // fragment 节点对应的子节点属性
@@ -273,7 +274,11 @@ export function completeRenderWorkForElement(chip: Chip) {
         // dispatcher: 响应式数据更新后触发，会
         return genRenderPayload(chip, newData)
       }, {
-        collectOnly: true // 首次仅做依赖收集但不执行派发逻辑
+        collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
+        scheduler: (job: Job) => {
+          // 将渲染更新任务注册到调度系统中
+          registerJob(job)
+        }
       })
     }
 
@@ -352,7 +357,7 @@ export function genRenderPayload(chip: Chip, renderData: DynamicRenderData): Ren
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
   const { props, childrenRenderer } = renderData
   const { elm, tag } = chip
-  let childPayloads = null;
+  let childPayloads = null
   let type = RenderUpdateTypes.PATCH_PROP
   if (isObject(childrenRenderer)) {
     // 处理动态子节点，生成动态子节点的 renderPayload
@@ -360,9 +365,17 @@ export function genRenderPayload(chip: Chip, renderData: DynamicRenderData): Ren
     if (isFunction(render)) {
       const oldChildren: VNodeChildren = chip.children
       const newChildren: VNodeChildren = render(source)
+      // children diff
       childPayloads = reconcileChildrenSequence(oldChildren, newChildren)
+      type = RenderUpdateTypes.PATCH_CHILDREN
     }
   }
 
   return createRenderPayload(tag as string, props, childPayloads, elm, chip.parent.elm, null, type)
+}
+
+// 对新旧动态子节点序列进行 diff，靶向生成需要触发的更新 payloads
+export function reconcileChildrenSequence(oldChildren: VNodeChildren, newChildren: VNodeChildren): RenderPayload[] {
+  // inferno diff
+  
 }

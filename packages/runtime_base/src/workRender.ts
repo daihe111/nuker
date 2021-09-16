@@ -16,14 +16,27 @@ export interface DynamicRenderData {
   childrenRenderer: ChildrenRenderer
 }
 
-export interface RenderPayload {
+export const enum RenderFlags {
+  IS_RENDER_PAYLOAD = '__n_isRenderPayload'
+}
+
+export interface RenderPayloadNode {
+  // flags
+  [RenderFlags.IS_RENDER_PAYLOAD]: true
+
+  // data
   type: number
   container?: Node
   parentContainer?: Node
   anchorContainer?: Node | null
   tag?: string
   props: Record<string | number | symbol, any>
-  childPayloads?: RenderPayload[] | null
+  phase?: number
+
+  // pointers
+  next: RenderPayloadNode | null
+  firstChild?: RenderPayloadNode | null
+  parent?: RenderPayloadNode
 }
 
 export const enum RenderModes {
@@ -272,7 +285,7 @@ export function completeRenderWorkForElement(chip: Chip) {
         return value.value
       }, (newData: DynamicRenderData) => {
         // dispatcher: 响应式数据更新后触发，会
-        return genRenderPayload(chip, newData)
+        return genRenderPayloadNode(chip, newData)
       }, {
         collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
         scheduler: (job: Job) => {
@@ -330,20 +343,22 @@ export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Ch
 }
 
 // 创建渲染信息描述 payload
-export function createRenderPayload(
+export function createRenderPayloadNode(
   tag: string,
   props: Record<string | number | symbol, any>,
-  childPayloads: RenderPayload[],
+  childPayloadRoot: RenderPayloadNode,
   container: Node,
   parentContainer: Node,
   anchorContainer: Node | null,
   type: number
-): RenderPayload {
+): RenderPayloadNode {
   return {
+    [RenderFlags.IS_RENDER_PAYLOAD]: true,
     type,
     tag,
     props,
-    childPayloads,
+    firstChild: childPayloadRoot,
+    next: null,
     container,
     parentContainer,
     anchorContainer
@@ -351,31 +366,31 @@ export function createRenderPayload(
 }
 
 // 生成更新描述信息
-export function genRenderPayload(chip: Chip, renderData: DynamicRenderData): RenderPayload {
+export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData): RenderPayloadNode {
   // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 vnode
   // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
   const { props, childrenRenderer } = renderData
   const { elm, tag } = chip
-  let childPayloads = null
+  let childPayloadRoot = null
   let type = RenderUpdateTypes.PATCH_PROP
   if (isObject(childrenRenderer)) {
-    // 处理动态子节点，生成动态子节点的 renderPayload
+    // 处理动态子节点，生成动态子节点的 RenderPayloadNode
     const { source, render } = childrenRenderer
     if (isFunction(render)) {
       const oldChildren: VNodeChildren = chip.children
       const newChildren: VNodeChildren = render(source)
       // children diff
-      childPayloads = reconcileChildrenSequence(oldChildren, newChildren)
+      childPayloadRoot = reconcileChildrenSequence(oldChildren, newChildren)
       type = RenderUpdateTypes.PATCH_CHILDREN
     }
   }
 
-  return createRenderPayload(tag as string, props, childPayloads, elm, chip.parent.elm, null, type)
+  return createRenderPayloadNode(tag as string, props, childPayloadRoot, elm, chip.parent.elm, null, type)
 }
 
 // 对新旧动态子节点序列进行 diff，靶向生成需要触发的更新 payloads
-export function reconcileChildrenSequence(oldChildren: VNodeChildren, newChildren: VNodeChildren): RenderPayload[] {
+export function reconcileChildrenSequence(oldChildren: VNodeChildren, newChildren: VNodeChildren): RenderPayloadNode {
   // inferno diff
-  
+
 }

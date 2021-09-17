@@ -26,9 +26,9 @@ export interface RenderPayloadNode {
 
   // data
   type: number
-  container?: Node
-  parentContainer?: Node
-  anchorContainer?: Node | null
+  container?: Element
+  parentContainer?: Element
+  anchorContainer?: Element | null
   tag?: string
   props: Record<string | number | symbol, any>
   phase?: number
@@ -45,12 +45,13 @@ export const enum RenderModes {
 }
 
 export const enum RenderUpdateTypes {
-  PATCH_PROP = 0,
-  PATCH_CHILDREN = 1,
-  MOUNT = 2,
-  UNMOUNT = 3,
-  REPLACE = 4,
-  MOVE = 5
+  PATCH_PROP = 1,
+  PATCH_CHILDREN = 1 << 1,
+  MOUNT = 1 << 2,
+  UNMOUNT = 1 << 3,
+  REPLACE = 1 << 4,
+  MOVE = 1 << 5,
+  INVALID = -1
 }
 
 // fragment 节点对应的子节点属性
@@ -347,9 +348,9 @@ export function createRenderPayloadNode(
   tag: string,
   props: Record<string | number | symbol, any>,
   childPayloadRoot: RenderPayloadNode,
-  container: Node,
-  parentContainer: Node,
-  anchorContainer: Node | null,
+  container: Element,
+  parentContainer: Element,
+  anchorContainer: Element | null,
   type: number
 ): RenderPayloadNode {
   return {

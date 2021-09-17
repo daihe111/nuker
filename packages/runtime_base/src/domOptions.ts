@@ -36,6 +36,10 @@ export const domOptions = {
     parent.insertBefore(child, anchor || null)
   },
 
+  appendChild: (child, parent) => {
+    parent.appendChild(child)
+  },
+
   remove: child => {
     const parent = child.parentNode
     if (parent) {
@@ -78,20 +82,7 @@ export const domOptions = {
   },
 
   cloneNode(el) {
-    const cloned = el.cloneNode(true)
-    // #3072
-    // - in `patchDOMProp`, we store the actual value in the `el._value` property.
-    // - normally, elements using `:value` bindings will not be hoisted, but if
-    //   the bound value is a constant, e.g. `:value="true"` - they do get
-    //   hoisted.
-    // - in production, hoisted nodes are cloned when subsequent inserts, but
-    //   cloneNode() does not copy the custom property we attached.
-    // - This may need to account for other custom DOM properties we attach to
-    //   elements in addition to `_value` in the future.
-    if (`_value` in el) {
-      ;(cloned as any)._value = (el as any)._value
-    }
-    return cloned
+    return el.cloneNode(true)
   },
 
   // __UNSAFE__

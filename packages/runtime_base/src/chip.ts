@@ -6,6 +6,7 @@ import {
 import { BaseListNode } from "../../share/src/shareTypes"
 import { ComponentInstance } from "./component"
 import { isObject } from "../../share/src"
+import { Effect } from "../../reactivity/src/effect"
 
 export const IS_CHIP = Symbol()
 
@@ -28,7 +29,11 @@ export const enum ChipPhases {
 }
 
 export type ChipUnit = Chip | VNode | null
-document.createElement
+
+// chip 是每个节点 (native dom | component) 的独立上下文，
+// 与节点本身共存，节点销毁时 chip 上下文一并销毁，并需要对上
+// 下文持有的状态进行清理 (节点所属 effects 一定要清理，防止后续
+// 操作数据时错误触发无效的 effect)
 export interface Chip extends VNodeCore {
   [IS_CHIP]: true
 
@@ -44,6 +49,9 @@ export interface Chip extends VNodeCore {
   // 当前已转化为 chip 的 VNode child 索引，用于辅助 chip 树
   // 遍历过程中动态创建新的 chip
   currentChildIndex?: number
+  // 存储节点对应的所有 effect，用于 chip 上下文销毁时对 effect 
+  // 进行靶向移除
+  effects?: ChipEffectUnit | null
 
   // pointers
   // chip 树中仅包含动态节点，在生成 chip 树时会将 dom 树

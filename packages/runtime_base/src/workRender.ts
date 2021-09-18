@@ -274,7 +274,7 @@ export function completeRenderWorkForElement(chip: Chip) {
   const props = chip.props
   const dynamicProps = new Map<string, any>()
   for (const propName in props) {
-    const { isDynamic, value } = (props[propName] as VNodePropNode)
+    let { isDynamic, value } = (props[propName] as VNodePropNode)
     if (isDynamic) {
       // 收集动态属性，动态属性的 value 是 wrapper 化的，避免
       // 访问属性 value 时是立即执行的
@@ -283,9 +283,9 @@ export function completeRenderWorkForElement(chip: Chip) {
       // 针对当前 chip 节点的动态属性创建对应的渲染 effect
       effect<DynamicRenderData>(() => {
         // collector: 触发当前注册 effect 的收集行为
-        return value.value
+        return (value = value.value)
       }, (newData: DynamicRenderData) => {
-        // dispatcher: 响应式数据更新后触发，会
+        // dispatcher: 响应式数据更新后触发
         return genRenderPayloadNode(chip, newData)
       }, {
         collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
@@ -294,11 +294,27 @@ export function completeRenderWorkForElement(chip: Chip) {
           registerJob(job)
         }
       })
+
+      // 将创建的 effect 存储至当前节点对应 chip context
+      if (chip.effects) {
+        const lastEffect = chip.effects.previous
+        lastEffect.next = {
+          effect,
+          previous: lastEffect,
+          next: chip.effects
+        }
+      } else {
+        chip.effects = {
+          effect,
+          previous: chip.effects,
+          next: chip.effects
+        }
+      }
     }
 
     // 将属性插入对应的 dom 节点
     if (elm) {
-      elm.setAttribute(propName, value.value)
+      elm.setAttribute(propName, value)
     }
   }
 }

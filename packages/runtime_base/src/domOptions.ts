@@ -40,8 +40,8 @@ export const domOptions = {
     parent.appendChild(child)
   },
 
-  remove: child => {
-    const parent = child.parentNode
+  remove: (child, parent) => {
+    parent = parent || child.parentNode
     if (parent) {
       parent.removeChild(child)
     }

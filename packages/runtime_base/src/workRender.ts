@@ -32,6 +32,7 @@ export interface RenderPayloadNode {
   tag?: string
   props: Record<string | number | symbol, any>
   phase?: number
+  context: Chip
 
   // pointers
   next: RenderPayloadNode | null
@@ -367,10 +368,12 @@ export function createRenderPayloadNode(
   container: Element,
   parentContainer: Element,
   anchorContainer: Element | null,
-  type: number
+  type: number,
+  context: Chip
 ): RenderPayloadNode {
   return {
     [RenderFlags.IS_RENDER_PAYLOAD]: true,
+    context,
     type,
     tag,
     props,
@@ -403,7 +406,7 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
     }
   }
 
-  return createRenderPayloadNode(tag as string, props, childPayloadRoot, elm, chip.parent.elm, null, type)
+  return createRenderPayloadNode(tag as string, props, childPayloadRoot, elm, chip.parent.elm, null, type, chip)
 }
 
 // 对新旧动态子节点序列进行 diff，靶向生成需要触发的更新 payloads

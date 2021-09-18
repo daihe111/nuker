@@ -1,6 +1,7 @@
 import { RenderPayloadNode, RenderFlags, RenderUpdateTypes, completeChip } from "./workRender";
 import { isObject, isEmptyObject } from "../../share/src";
 import { domOptions } from "./domOptions";
+import { Chip } from "./chip";
 
 export const enum TraversePhases {
   CALL = 0,
@@ -96,6 +97,18 @@ export function commitMountMutation(
     } else {
       domOptions.appendChild(child, parentContainer)
     }
+  }
+}
+
+export function commitUnmountMutation(
+  target: Element,
+  parentContainer: Element,
+  context: Chip
+) {
+  if (parentContainer && target) {
+    domOptions.remove(target, parentContainer)
+    // 进行对应 chip context 清理
+    
   }
 }
 

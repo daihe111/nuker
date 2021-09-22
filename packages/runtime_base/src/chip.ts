@@ -18,8 +18,10 @@ export interface ChipRef {
 
 }
 
-export interface ChipEffectUnit extends BaseListNode {
-  effect: Function
+export interface ChipEffectUnit {
+  effect: Effect
+  previous: ChipEffectUnit
+  next: ChipEffectUnit
 }
 
 export const enum ChipPhases {
@@ -45,7 +47,6 @@ export interface Chip extends VNodeCore {
   instance: ComponentInstance | null
   directives?: unknown
   components?: unknown
-  level?: number // 当前 chip 节点在树中所处层级标记
   // 当前已转化为 chip 的 VNode child 索引，用于辅助 chip 树
   // 遍历过程中动态创建新的 chip
   currentChildIndex?: number

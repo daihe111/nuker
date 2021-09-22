@@ -1,7 +1,8 @@
 import { RenderPayloadNode, RenderFlags, RenderUpdateTypes, completeChip } from "./workRender";
 import { isObject, isEmptyObject } from "../../share/src";
 import { domOptions } from "./domOptions";
-import { Chip } from "./chip";
+import { Chip, ChipPhases } from "./chip";
+import { teardownEffect, Effect } from "../../reactivity/src/effect";
 
 export const enum TraversePhases {
   CALL = 0,
@@ -108,7 +109,34 @@ export function commitUnmountMutation(
   if (parentContainer && target) {
     domOptions.remove(target, parentContainer)
     // 进行对应 chip context 清理
-    
+    clearChipContext(context)
   }
 }
+
+export function clearChipContext(context: Chip) {
+  let currentEffect = context.effects
+  while (currentEffect !== null) {
+    // 将当前 effect 从依赖仓库中卸载
+    teardownEffect(currentEffect.effect)
+    currentEffect = currentEffect.next
+  }
+
+  // 将 chip context 从树中移除
+  const {
+    prevSibling: previous,
+    nextSibling: next
+  } = context
+  if (previous) {
+    previous.nextSibling = next
+    if (next) {
+      next.prevSibling = previous
+    }
+  } else {
+    next.prevSibling = null
+    context.parent.firstChild = next
+  }
+  context.parent = context.prevSibling = context.nextSibling = null
+}
+
+
 

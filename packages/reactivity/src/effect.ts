@@ -153,6 +153,13 @@ export function dispatch(
   })
 }
 
+export function teardownEffect(effect: Effect) {
+  const stores = effect.stores
+  stores.forEach(s => {
+    s.delete(effect)
+  })
+}
+
 export function disableCollecting() {
   collectingFlag = CollectingFlags.COLLECTING_CLOSED
 }

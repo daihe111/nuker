@@ -34,7 +34,7 @@ export interface VNode extends VNodeCore {
   [VNodeFlags.IS_VNODE]: true
 
   id: number // 节点编号 id (自增)
-  elm: unknown
+  elm: Element
   ref: VNodeRef
   key: string | number | symbol
   vnodeType: number

@@ -113,6 +113,18 @@ export function commitUnmountMutation(
   }
 }
 
+export function commitMoveMutation(
+  target: Element,
+  parentContainer: Element,
+  anchor: Element
+) {
+  if (target && parentContainer && anchor) {
+    const clone: Element = domOptions.cloneNode(target)
+    domOptions.remove(target, parentContainer)
+    domOptions.insert(clone, parentContainer, anchor)
+  }
+}
+
 export function clearChipContext(context: Chip) {
   let currentEffect = context.effects
   while (currentEffect !== null) {

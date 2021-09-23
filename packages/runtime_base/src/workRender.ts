@@ -1,6 +1,6 @@
 import { Chip, ChipRoot, ChipUnit, ChipPhases } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction } from "../../share/src";
-import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild, VNodePropNode } from "./vnode";
+import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild, VNodePropNode, isSameVNode } from "./vnode";
 import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
@@ -64,6 +64,8 @@ const dynamicChipList = genBaseListNode(null, dynamicChipKey)
 let ongoingChip: ChipUnit = null
 // 当前正在执行渲染工作的组件 instance
 let currentRenderingInstance: ComponentInstance = null
+// 当前正在生成的 RenderPayloadNode
+let currentRenderPayload: RenderPayloadNode
 
 // update types: 
 // unstable dom (if-structure, for-structure)
@@ -401,12 +403,38 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
       const oldChildren: VNodeChildren = chip.children
       const newChildren: VNodeChildren = render(source)
       // children diff
-      childPayloadRoot = reconcileChildrenSequence(oldChildren, newChildren)
+      childPayloadRoot = reconcile(oldChildren, newChildren)
       type = RenderUpdateTypes.PATCH_CHILDREN
     }
   }
 
-  return createRenderPayloadNode(tag as string, props, childPayloadRoot, elm, chip.parent.elm, null, type, chip)
+  const payload = createRenderPayloadNode(tag as string, props, childPayloadRoot, elm, chip.parent.elm, null, type, chip)
+  currentRenderPayload.next = payload
+  return payload
+}
+
+export function reconcile(oldVNode: VNodeChildren, newVNode: VNodeChildren) {
+  if (oldVNode[VNodeFlags.IS_VNODE] && newVNode[VNodeFlags.IS_VNODE]) {
+    // 新旧 vnode 均是单个 vnode
+    if (!isSameVNode((oldVNode as VNode), (newVNode as VNode))) {
+      // 非相似节点直接 replace
+      const { tag, props, elm, context } = (newVNode as VNode)
+      const parentContainer: Element = (context as Chip).parent.elm
+      return createRenderPayloadNode(
+        (tag as string),
+        props,
+        null,
+        elm,
+        parentContainer,
+        null,
+        RenderUpdateTypes.REPLACE,
+        context
+      )
+    }
+  }
+  switch () {
+
+  }
 }
 
 // 对新旧动态子节点序列进行 diff，靶向生成需要触发的更新 payloads

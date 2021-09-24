@@ -1,10 +1,15 @@
 import { Chip, ChipRoot, ChipUnit, ChipPhases } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction } from "../../share/src";
-import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild, VNodePropNode, isSameVNode } from "./vnode";
+import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild, VNodePropNode, isSameVNode, VNodeTypeNames } from "./vnode";
 import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect } from "../../reactivity/src/effect";
+
+export interface ReconcileVNodePair {
+  oldVNode: VNode | null
+  newVNode: VNode | null
+}
 
 export interface ChildrenRenderer {
   source: any
@@ -62,6 +67,7 @@ const dynamicChipKey = Symbol()
 const dynamicChipList = genBaseListNode(null, dynamicChipKey)
 // 正在进行中的 chip 节点
 let ongoingChip: ChipUnit = null
+let ongoingReconcileNode: VNode = null
 // 当前正在执行渲染工作的组件 instance
 let currentRenderingInstance: ComponentInstance = null
 // 当前正在生成的 RenderPayloadNode
@@ -364,14 +370,14 @@ export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Ch
 
 // 创建渲染信息描述 payload
 export function createRenderPayloadNode(
-  tag: string,
-  props: Record<string | number | symbol, any>,
-  childPayloadRoot: RenderPayloadNode,
   container: Element,
   parentContainer: Element,
   anchorContainer: Element | null,
   type: number,
-  context: Chip
+  context: Chip,
+  tag?: string,
+  props?: Record<string | number | symbol, any>,
+  childPayloadRoot?: RenderPayloadNode
 ): RenderPayloadNode {
   return {
     [RenderFlags.IS_RENDER_PAYLOAD]: true,
@@ -408,32 +414,79 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
     }
   }
 
-  const payload = createRenderPayloadNode(tag as string, props, childPayloadRoot, elm, chip.parent.elm, null, type, chip)
+  const payload = createRenderPayloadNode(
+    elm,
+    chip.parent.elm,
+    null,
+    type,
+    chip,
+    (tag as string),
+    props,
+    childPayloadRoot
+  )
   currentRenderPayload.next = payload
   return payload
 }
 
-export function reconcile(oldVNode: VNodeChildren, newVNode: VNodeChildren) {
-  if (oldVNode[VNodeFlags.IS_VNODE] && newVNode[VNodeFlags.IS_VNODE]) {
+export function registerOngoingReconcileWork(oldVNode: VNode, newVNode: VNode) {
+  ongoingReconcileNode = newVNode
+  registerJob(() => {
+    // get next to working
+    const {
+      oldVNode: nextOld,
+      newVNode: nextNew
+    } = reconcile(oldVNode, newVNode)
+    registerOngoingReconcileWork(nextOld, nextNew)
+  })
+}
+
+// 每个节点的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
+export function reconcile(oldVNode: VNode, newVNode: VNode): ReconcileVNodePair {
+  if (!newVNode && oldVNode) {
+    // 新节点为空，卸载旧的节点
+    unmount(oldVNode)
+  }
+  
+  if (isSameVNode((oldVNode as VNode), (newVNode as VNode))) {
+    // 非相似节点直接 replace
+    const { tag, props, elm, context } = (newVNode as VNode)
+    const parentContainer: Element = (context as Chip).parent.elm
+    return createRenderPayloadNode(
+      elm,
+      parentContainer,
+      null,
+      RenderUpdateTypes.REPLACE,
+      context,
+      (tag as string),
+      props
+    )
+  }
+  
+   else if (oldVNode[VNodeFlags.IS_VNODE] && newVNode[VNodeFlags.IS_VNODE]) {
     // 新旧 vnode 均是单个 vnode
-    if (!isSameVNode((oldVNode as VNode), (newVNode as VNode))) {
-      // 非相似节点直接 replace
-      const { tag, props, elm, context } = (newVNode as VNode)
-      const parentContainer: Element = (context as Chip).parent.elm
-      return createRenderPayloadNode(
-        (tag as string),
-        props,
-        null,
-        elm,
-        parentContainer,
-        null,
-        RenderUpdateTypes.REPLACE,
-        context
-      )
-    }
+    
   }
   switch () {
 
+  }
+}
+
+export function unmount(vnode: VNode): void {
+  if (vnode.vnodeType === UnitTypes.FRAGMENT) {
+    const children = (vnode.children as VNode[])
+    for (let i = 0; i < children.length; i++) {
+      unmount(children[i])
+    }
+  } else if (vnode[VNodeFlags.IS_VNODE]) {
+    const { elm, context } = vnode
+    const parentContainer: Element = domOptions.parentNode(elm)
+    currentRenderPayload.next = createRenderPayloadNode(
+      elm,
+      parentContainer,
+      null,
+      RenderUpdateTypes.UNMOUNT,
+      context
+    )
   }
 }
 

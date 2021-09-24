@@ -3,6 +3,7 @@ import {
   isReservedComponentTag
 } from './domOptions';
 import { isObject, isArray, isString, isNumber } from '../../share/src';
+import { Chip } from './chip';
 
 export type VNodeTag = | string | void
 
@@ -41,6 +42,7 @@ export interface VNode extends VNodeCore {
   instance: unknown
   directives: unknown
   components: unknown
+  context: Chip
 
   // 节点指针
   parent: VNode | null

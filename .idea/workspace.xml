@@ -469,7 +469,7 @@
         <option value="$PROJECT_DIR$/.eslintignore" />
         <option value="$PROJECT_DIR$/.eslintrc.js" />
         <option value="$PROJECT_DIR$/packages/nodeOptions/package.json" />
-        <option value="$PROJECT_DIR$/packages/vDom/src/vNodeOptions.js" />
+        <option value="$PROJECT_DIR$/packages/vDom/src/CHIPOptions.js" />
         <option value="$PROJECT_DIR$/packages/share/src/utils.js" />
         <option value="$PROJECT_DIR$/packages/domOptions/index.js" />
         <option value="$PROJECT_DIR$/packages/share/index.js" />
@@ -477,7 +477,7 @@
         <option value="$PROJECT_DIR$/packages/nuke/index.js" />
         <option value="$PROJECT_DIR$/package-lock.json" />
         <option value="$PROJECT_DIR$/packages/domOptions/src/operations.js" />
-        <option value="$PROJECT_DIR$/packages/vDom/src/vNode.js" />
+        <option value="$PROJECT_DIR$/packages/vDom/src/CHIP.js" />
         <option value="$PROJECT_DIR$/package.json" />
         <option value="$PROJECT_DIR$/packages/vDom/src/index.js" />
         <option value="$PROJECT_DIR$/packages/share/src/index.js" />
@@ -758,7 +758,7 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/packages/vDom/src/vNode.js">
+    <entry file="file://$PROJECT_DIR$/packages/vDom/src/CHIP.js">
       <provider selected="true" editor-type-id="text-editor">
         <state>
           <caret column="31" lean-forward="true" selection-start-column="31" selection-end-column="31" />

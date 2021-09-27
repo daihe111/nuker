@@ -1,19 +1,30 @@
-import { Chip, ChipRoot, ChipUnit, ChipPhases } from "./chip";
+import {
+  Chip,
+  ChipRoot,
+  ChipUnit,
+  ChipPhases,
+  ChipChildren,
+  UnitTypes,
+  ChipFlags,
+  getFirstChipChild,
+  ChipPropNode,
+  isSameChip,
+  ChipTypeNames
+} from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction } from "../../share/src";
-import { VNode, VNodeChildren, UnitTypes, VNodeFlags, getFirstVNodeChild, VNodePropNode, isSameVNode, VNodeTypeNames } from "./vnode";
 import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect } from "../../reactivity/src/effect";
 
-export interface ReconcileVNodePair {
-  oldVNode: VNode | null
-  newVNode: VNode | null
+export interface ReconcileChipPair {
+  oldChip: Chip | null
+  newChip: Chip | null
 }
 
 export interface ChildrenRenderer {
   source: any
-  render: (source: any) => VNodeChildren
+  render: (source: any) => ChipChildren
 }
 
 export interface DynamicRenderData {
@@ -67,7 +78,7 @@ const dynamicChipKey = Symbol()
 const dynamicChipList = genBaseListNode(null, dynamicChipKey)
 // 正在进行中的 chip 节点
 let ongoingChip: ChipUnit = null
-let ongoingReconcileNode: VNode = null
+let ongoingReconcileNode: Chip = null
 // 当前正在执行渲染工作的组件 instance
 let currentRenderingInstance: ComponentInstance = null
 // 当前正在生成的 RenderPayloadNode
@@ -129,19 +140,22 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
 
     let firstChild = chip.firstChild
     if (!firstChild) {
-      const firstVNodeChild = getFirstVNodeChild(chip.children)
-      chip.firstChild = firstChild = createChipFromVNode(firstVNodeChild)
+      const firstChipChild = getFirstChipChild(chip.children)
+      chip.firstChild = firstChild = firstChipChild
+      let next: Chip;
       if (firstChild) {
         firstChild.parent = chip
         chip.currentChildIndex = 0
-        return firstChild
+        next = firstChild
       } else {
-        return completeChip(chipRoot, chip, mode)
+        next = completeChip(chipRoot, chip, mode)
       }
+
+      return next
     }
   } else if (chip.phase === ChipPhases.INITIALIZE) {
     // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
-    genMutableEffects(chipRoot, chip, mode)
+    return completeChip(chipRoot, chip, mode)
   }
 }
 
@@ -158,7 +172,7 @@ export function workChipsByUpdate(chipRoot: ChipRoot) {
 
 // 需进行 dive-swim-bubble 后序遍历模型，保证 effect 的先子后父进行挂载
 // 便于 commit 阶段实用内存进行离屏渲染
-export function traverseChipTree(parent: Chip, children?: VNodeChildren): void {
+export function traverseChipTree(parent: Chip, children?: ChipChildren): void {
   
 }
 
@@ -188,21 +202,23 @@ export function initRenderWorkForChip(chip: Chip) {
 export function completeChip(chipRoot: ChipRoot, chip: Chip, mode: number): Chip {
   chip.phase = ChipPhases.COMPLETE
   genMutableEffects(chipRoot, chip, mode)
+
+  // 计算下一个要处理的节点
   let sibling = chip.nextSibling
   if (sibling === null) {
     // finish dive and start swim to handle sibling node
     const parent = chip.parent
-    const nextVNodeChild: VNode = parent.children[parent.currentChildIndex + 1]
-    if (nextVNodeChild[VNodeFlags.IS_VNODE]) {
+    const nextChipChild: Chip = parent.children[parent.currentChildIndex + 1]
+    if (nextChipChild[ChipFlags.IS_CHIP]) {
       // 当前 chip 有有效的兄弟节点
-      sibling = chip.nextSibling = createChipFromVNode(nextVNodeChild)
+      sibling = chip.nextSibling = nextChipChild
       sibling.prevSibling = chip
       sibling.parent = parent
       parent.currentChildIndex++
       return sibling
     } else {
       // 无有效兄弟节点，且当前 chip 已处理完毕，开始进入 bubble 阶段，
-      // 回溯父节点
+      // 回溯祖先节点
       return parent
     }
   } else {
@@ -232,7 +248,7 @@ export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) 
   }
 }
 
-export function createChipFromVNode(vnode: VNode): Chip | null {
+export function createChipFromChip(chip: Chip): Chip | null {
   return
 }
 
@@ -283,7 +299,7 @@ export function completeRenderWorkForElement(chip: Chip) {
   const props = chip.props
   const dynamicProps = new Map<string, any>()
   for (const propName in props) {
-    let { isDynamic, value } = (props[propName] as VNodePropNode)
+    let { isDynamic, value } = (props[propName] as ChipPropNode)
     if (isDynamic) {
       // 收集动态属性，动态属性的 value 是 wrapper 化的，避免
       // 访问属性 value 时是立即执行的
@@ -395,7 +411,7 @@ export function createRenderPayloadNode(
 
 // 生成更新描述信息
 export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData): RenderPayloadNode {
-  // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 vnode
+  // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 chip
   // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
   const { props, childrenRenderer } = renderData
@@ -406,8 +422,8 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
     // 处理动态子节点，生成动态子节点的 RenderPayloadNode
     const { source, render } = childrenRenderer
     if (isFunction(render)) {
-      const oldChildren: VNodeChildren = chip.children
-      const newChildren: VNodeChildren = render(source)
+      const oldChildren: ChipChildren = chip.children
+      const newChildren: ChipChildren = render(source)
       // children diff
       childPayloadRoot = reconcile(oldChildren, newChildren)
       type = RenderUpdateTypes.PATCH_CHILDREN
@@ -428,28 +444,33 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
   return payload
 }
 
-export function registerOngoingReconcileWork(oldVNode: VNode, newVNode: VNode) {
-  ongoingReconcileNode = newVNode
+// 将单个成对节点的 reconcile 作为任务单元注册进调度系统
+export function registerOngoingReconcileWork(oldChip: Chip, newChip: Chip) {
+  ongoingReconcileNode = newChip
   registerJob(() => {
     // get next to working
     const {
-      oldVNode: nextOld,
-      newVNode: nextNew
-    } = reconcile(oldVNode, newVNode)
+      oldChip: nextOld,
+      newChip: nextNew
+    } = reconcile(oldChip, newChip)
     registerOngoingReconcileWork(nextOld, nextNew)
   })
 }
 
 // 每个节点的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
-export function reconcile(oldVNode: VNode, newVNode: VNode): ReconcileVNodePair {
-  if (!newVNode && oldVNode) {
+export function reconcile(oldChip: Chip, newChip: Chip): ReconcileChipPair {
+  if (!newChip && oldChip) {
     // 新节点为空，卸载旧的节点
-    unmount(oldVNode)
+    unmount(oldChip)
+  }
+
+  if (newChip && !oldChip) {
+    mount(newChip)
   }
   
-  if (isSameVNode((oldVNode as VNode), (newVNode as VNode))) {
+  if (isSameChip((oldChip as Chip), (newChip as Chip))) {
     // 非相似节点直接 replace
-    const { tag, props, elm, context } = (newVNode as VNode)
+    const { tag, props, elm, context } = (newChip as Chip)
     const parentContainer: Element = (context as Chip).parent.elm
     return createRenderPayloadNode(
       elm,
@@ -462,23 +483,45 @@ export function reconcile(oldVNode: VNode, newVNode: VNode): ReconcileVNodePair 
     )
   }
   
-   else if (oldVNode[VNodeFlags.IS_VNODE] && newVNode[VNodeFlags.IS_VNODE]) {
-    // 新旧 vnode 均是单个 vnode
+   else if (oldChip[ChipFlags.IS_CHIP] && newChip[ChipFlags.IS_CHIP]) {
+    // 新旧 chip 均是单个 chip
     
   }
-  switch () {
 
+  // 计算下一组需要进行 reconcile 的 chip
+  mapChipChildren(oldChip.children, newChip.children)
+}
+
+export function mapChipChildren(oldChildren: ChipChildren, newChildren: ChipChildren): void {
+
+}
+
+export function mount(oldChip: Chip, newChip: Chip, anchor: Element): void {
+  if (newChip.chipType === UnitTypes.FRAGMENT) {
+
+  } else if (newChip[ChipFlags.IS_CHIP]) {
+    const { context } = oldChip
+    const { tag, props } = newChip
+    currentRenderPayload.next = createRenderPayloadNode(
+      null,
+      null,
+      null,
+      RenderUpdateTypes.MOUNT,
+      context,
+      (tag as string),
+      props
+    )
   }
 }
 
-export function unmount(vnode: VNode): void {
-  if (vnode.vnodeType === UnitTypes.FRAGMENT) {
-    const children = (vnode.children as VNode[])
+export function unmount(chip: Chip): void {
+  if (chip.chipType === UnitTypes.FRAGMENT) {
+    const children = (chip.children as Chip[])
     for (let i = 0; i < children.length; i++) {
       unmount(children[i])
     }
-  } else if (vnode[VNodeFlags.IS_VNODE]) {
-    const { elm, context } = vnode
+  } else if (chip[ChipFlags.IS_CHIP]) {
+    const { elm, context } = chip
     const parentContainer: Element = domOptions.parentNode(elm)
     currentRenderPayload.next = createRenderPayloadNode(
       elm,
@@ -491,7 +534,7 @@ export function unmount(vnode: VNode): void {
 }
 
 // 对新旧动态子节点序列进行 diff，靶向生成需要触发的更新 payloads
-export function reconcileChildrenSequence(oldChildren: VNodeChildren, newChildren: VNodeChildren): RenderPayloadNode {
+export function reconcileChildrenSequence(oldChildren: ChipChildren, newChildren: ChipChildren): RenderPayloadNode {
   // inferno diff
 
 }

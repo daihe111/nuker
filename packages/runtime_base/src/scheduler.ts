@@ -508,9 +508,9 @@ export function pushJob(job: Job, jobRoot: JobNode): boolean {
         currentJob.expirationTime :
         currentJob.startTime
     if (sortFlag <= currentSortFlag) {
-      const prevNode = currentNode.previous
-      const newNode = prevNode.next = createJobNode(job, jobRoot.type)
-      newNode.previous = prevNode
+      const preCHIP = currentNode.previous
+      const newNode = preCHIP.next = createJobNode(job, jobRoot.type)
+      newNode.previous = preCHIP
       newNode.next = currentNode
       currentNode.previous = newNode
       return true
@@ -539,10 +539,10 @@ export function removeJob(job: Job, jobRoot: JobNode): boolean {
   while (currentNode !== null) {
     if (currentNode.job === job) {
       // 匹配到目标任务，将该任务删除
-      const prevNode = currentNode.previous
+      const preCHIP = currentNode.previous
       const nextNode = currentNode.next
-      prevNode.next = nextNode
-      nextNode.previous = prevNode
+      preCHIP.next = nextNode
+      nextNode.previous = preCHIP
       return true
     }
     currentNode = currentNode.next

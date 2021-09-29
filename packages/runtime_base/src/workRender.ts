@@ -9,7 +9,8 @@ import {
   getFirstChipChild,
   ChipPropNode,
   isSameChip,
-  ChipTypeNames
+  ChipTypeNames,
+  cloneChip
 } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction } from "../../share/src";
 import { registerJob, Job } from "./scheduler";
@@ -78,7 +79,6 @@ const dynamicChipKey = Symbol()
 const dynamicChipList = genBaseListNode(null, dynamicChipKey)
 // 正在进行中的 chip 节点
 let ongoingChip: ChipUnit = null
-let ongoingReconcileNode: Chip = null
 // 当前正在执行渲染工作的组件 instance
 let currentRenderingInstance: ComponentInstance = null
 // 当前正在生成的 RenderPayloadNode
@@ -142,7 +142,7 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
     if (!firstChild) {
       const firstChipChild = getFirstChipChild(chip.children)
       chip.firstChild = firstChild = firstChipChild
-      let next: Chip;
+      let next: Chip
       if (firstChild) {
         firstChild.parent = chip
         chip.currentChildIndex = 0
@@ -152,6 +152,8 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
       }
 
       return next
+    } else {
+      return firstChild
     }
   } else if (chip.phase === ChipPhases.INITIALIZE) {
     // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
@@ -422,10 +424,9 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
     // 处理动态子节点，生成动态子节点的 RenderPayloadNode
     const { source, render } = childrenRenderer
     if (isFunction(render)) {
-      const oldChildren: ChipChildren = chip.children
-      const newChildren: ChipChildren = render(source)
-      // children diff
-      childPayloadRoot = reconcile(oldChildren, newChildren)
+      const newChip = cloneChip(chip, props, render(source))
+      // trigger diff
+      childPayloadRoot = performReconcileWork(chip, newChip)
       type = RenderUpdateTypes.PATCH_CHILDREN
     }
   }
@@ -444,9 +445,18 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
   return payload
 }
 
+// diff 执行入口函数
+export function performReconcileWork(oldChip: Chip, newChip: Chip): void {
+  try {
+    registerOngoingReconcileWork(oldChip, newChip)
+  } catch (e) {
+
+  }
+}
+
 // 将单个成对节点的 reconcile 作为任务单元注册进调度系统
-export function registerOngoingReconcileWork(oldChip: Chip, newChip: Chip) {
-  ongoingReconcileNode = newChip
+export function registerOngoingReconcileWork(oldChip: Chip, newChip: Chip): void {
+  ongoingChip = newChip
   registerJob(() => {
     // get next to working
     const {
@@ -459,6 +469,29 @@ export function registerOngoingReconcileWork(oldChip: Chip, newChip: Chip) {
 
 // 每个节点的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
 export function reconcile(oldChip: Chip, newChip: Chip): ReconcileChipPair {
+  ongoingChip = newChip
+  let nextChipPair = {}
+  while (ongoingChip !== null) {
+    const firstChild: Chip = getFirstChipChild(newChip.children)
+    if (firstChild) {
+      ongoingChip.firstChild = firstChild
+      firstChild.parent = ongoingChip
+      // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
+      // 通过新旧节点间的映射关系进行节点对的 diff
+      const oldChildren: ChipChildren = ongoingChip.wormhole.children
+      mapChipChildren(oldChildren, ongoingChip.children)
+      ongoingChip = firstChild
+    } else {
+      ongoingChip = completeReconcile(ongoingChip)
+    }
+
+    // 根据下一个要处理的 chip 解析出下一个要进行 reconcile 的节点对
+
+  }
+}
+
+// 完成 chip 节点的 reconcile 工作
+export function completeReconcile(chip: Chip): Chip {
   if (!newChip && oldChip) {
     // 新节点为空，卸载旧的节点
     unmount(oldChip)
@@ -487,11 +520,9 @@ export function reconcile(oldChip: Chip, newChip: Chip): ReconcileChipPair {
     // 新旧 chip 均是单个 chip
     
   }
-
-  // 计算下一组需要进行 reconcile 的 chip
-  mapChipChildren(oldChip.children, newChip.children)
 }
 
+// 建立 chip 子节点之间的映射关系
 export function mapChipChildren(oldChildren: ChipChildren, newChildren: ChipChildren): void {
 
 }

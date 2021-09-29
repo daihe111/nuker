@@ -143,7 +143,7 @@ export function parseChipType(tag: ChipTag): number {
   return UnitTypes.INVALID_NODE
 }
 
-export function cloneChip(chip: Chip, props: object, children: ChipChildren) {
+export function cloneChip(chip: Chip, props: object, children: ChipChildren): Chip {
   return Object.assign({}, {
     tag: chip.tag,
     data: Object.assign({}, chip.data),

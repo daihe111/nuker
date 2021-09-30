@@ -455,75 +455,64 @@ export function performReconcileWork(oldChip: Chip, newChip: Chip): void {
 }
 
 // 将单个成对节点的 reconcile 作为任务单元注册进调度系统
-export function registerOngoingReconcileWork(oldChip: Chip, newChip: Chip): void {
-  ongoingChip = newChip
+export function registerOngoingReconcileWork(chip: Chip): void {
   registerJob(() => {
-    // get next to working
-    const {
-      oldChip: nextOld,
-      newChip: nextNew
-    } = reconcile(oldChip, newChip)
-    registerOngoingReconcileWork(nextOld, nextNew)
+    registerOngoingReconcileWork(reconcile(chip))
   })
 }
 
 // 每个节点的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
-export function reconcile(oldChip: Chip, newChip: Chip): ReconcileChipPair {
-  ongoingChip = newChip
-  let nextChipPair = {}
-  while (ongoingChip !== null) {
-    const firstChild: Chip = getFirstChipChild(newChip.children)
-    if (firstChild) {
-      ongoingChip.firstChild = firstChild
-      firstChild.parent = ongoingChip
-      // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
-      // 通过新旧节点间的映射关系进行节点对的 diff
-      const oldChildren: ChipChildren = ongoingChip.wormhole.children
-      mapChipChildren(oldChildren, ongoingChip.children)
-      ongoingChip = firstChild
-    } else {
-      ongoingChip = completeReconcile(ongoingChip)
-    }
+export function reconcile(chip: Chip): Chip {
+  let nextChip: Chip
+  ongoingChip = chip
+  switch (chip.phase) {
+    case ChipPhases.PENDING:
+      const children: ChipChildren = chip.children
+      const firstChild: Chip = getFirstChipChild(children)
 
-    // 根据下一个要处理的 chip 解析出下一个要进行 reconcile 的节点对
+      chip.phase = ChipPhases.INITIALIZE
 
+      if (firstChild) {
+        chip.firstChild = firstChild
+        firstChild.parent = chip
+        // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
+        // 通过新旧节点间的映射关系进行节点对的 diff
+        const oldChildren: ChipChildren = chip.wormhole.children
+        mapChipChildren(oldChildren, children)
+        nextChip = firstChild
+      } else {
+        nextChip = completeReconcile(chip)
+      }
+
+      break
+    case ChipPhases.INITIALIZE:
+      nextChip = completeReconcile(chip)
+      break
   }
+
+  return nextChip
 }
 
 // 完成 chip 节点的 reconcile 工作
 export function completeReconcile(chip: Chip): Chip {
-  if (!newChip && oldChip) {
-    // 新节点为空，卸载旧的节点
-    unmount(oldChip)
-  }
+  ongoingChip = chip
+  chip.phase = ChipPhases.COMPLETE
 
-  if (newChip && !oldChip) {
-    mount(newChip)
-  }
-  
-  if (isSameChip((oldChip as Chip), (newChip as Chip))) {
-    // 非相似节点直接 replace
-    const { tag, props, elm, context } = (newChip as Chip)
-    const parentContainer: Element = (context as Chip).parent.elm
-    return createRenderPayloadNode(
-      elm,
-      parentContainer,
-      null,
-      RenderUpdateTypes.REPLACE,
-      context,
-      (tag as string),
-      props
-    )
-  }
-  
-   else if (oldChip[ChipFlags.IS_CHIP] && newChip[ChipFlags.IS_CHIP]) {
-    // 新旧 chip 均是单个 chip
-    
-  }
+  // diff 出更新描述 RenderPayload
+  reconcileToGenRenderPayload(chip)
+
+  // 获取下一个需要处理的 chip
+  let sibling: Chip = chip.nextSibling
+  return sibling ? sibling : chip.parent
 }
 
 // 建立 chip 子节点之间的映射关系
 export function mapChipChildren(oldChildren: ChipChildren, newChildren: ChipChildren): void {
+
+}
+
+// 新旧 chip diff 生成更新描述
+export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
 
 }
 

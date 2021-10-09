@@ -313,7 +313,7 @@ export function completeRenderWorkForElement(chip: Chip) {
         return (value = value.value)
       }, (newData: DynamicRenderData) => {
         // dispatcher: 响应式数据更新后触发
-        return genRenderPayloadNode(chip, newData)
+        return genRenderPayloads(chip, newData)
       }, {
         collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
         scheduler: (job: Job) => {
@@ -412,13 +412,12 @@ export function createRenderPayloadNode(
 }
 
 // 生成更新描述信息
-export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData): RenderPayloadNode {
+export function genRenderPayloads(chip: Chip, renderData: DynamicRenderData): RenderPayloadNode {
   // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 chip
   // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
   const { props, childrenRenderer } = renderData
   const { elm, tag } = chip
-  let childPayloadRoot = null
   let type = RenderUpdateTypes.PATCH_PROP
   if (isObject(childrenRenderer)) {
     // 处理动态子节点，生成动态子节点的 RenderPayloadNode
@@ -426,7 +425,7 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
     if (isFunction(render)) {
       const newChip = cloneChip(chip, props, render(source))
       // trigger diff
-      childPayloadRoot = performReconcileWork(chip, newChip)
+      performReconcileWork(chip, newChip)
       type = RenderUpdateTypes.PATCH_CHILDREN
     }
   }
@@ -438,17 +437,17 @@ export function genRenderPayloadNode(chip: Chip, renderData: DynamicRenderData):
     type,
     chip,
     (tag as string),
-    props,
-    childPayloadRoot
+    props
   )
-  currentRenderPayload.next = payload
+  currentRenderPayload = currentRenderPayload.next = payload
   return payload
 }
 
 // diff 执行入口函数
 export function performReconcileWork(oldChip: Chip, newChip: Chip): void {
   try {
-    registerOngoingReconcileWork(oldChip, newChip)
+    newChip.wormhole = oldChip
+    registerOngoingReconcileWork(newChip)
   } catch (e) {
 
   }
@@ -551,10 +550,4 @@ export function unmount(chip: Chip): void {
       context
     )
   }
-}
-
-// 对新旧动态子节点序列进行 diff，靶向生成需要触发的更新 payloads
-export function reconcileChildrenSequence(oldChildren: ChipChildren, newChildren: ChipChildren): RenderPayloadNode {
-  // inferno diff
-
 }

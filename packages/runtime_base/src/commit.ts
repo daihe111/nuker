@@ -4,43 +4,18 @@ import { domOptions } from "./domOptions";
 import { Chip, ChipPhases } from "./chip";
 import { teardownEffect, Effect } from "../../reactivity/src/effect";
 
-export const enum TraversePhases {
-  CALL = 0,
-  RECALL = 1
-}
-
-let ongoingRenderPayload: RenderPayloadNode
-
-// payload 和 chip 一样是一颗链表树 (有向图)
-// 采用 dive-swim-bubble 算法模型，便于从子代节点进行 commit
+// payload 链表节点在 render 阶段按照由子到父的顺序插入，commit 时
+// 按照先后顺序遍历 commit payload 节点，即可保证 commit 的执行顺序
 export function commitRenderPayloads(payloadRoot: RenderPayloadNode) {
-  ongoingRenderPayload = payloadRoot
-  while (ongoingRenderPayload !== null) {
-    switch (ongoingRenderPayload.phase) {
-      case TraversePhases.CALL:
-        // 回溯遍历
-        ongoingRenderPayload = completeRenderPayload(ongoingRenderPayload)
-        ongoingRenderPayload.phase = TraversePhases.RECALL
-        break
-      case TraversePhases.RECALL:
-        // do nothing
-        break
-      default:
-        // 首次遍历节点
-        if (ongoingRenderPayload.firstChild) {
-          ongoingRenderPayload = ongoingRenderPayload.firstChild
-        } else {
-          ongoingRenderPayload = completeRenderPayload(ongoingRenderPayload)
-          ongoingRenderPayload.phase = TraversePhases.RECALL
-        }
-
-        ongoingRenderPayload.phase = TraversePhases.CALL
-        break
-    }
+  let currentPayload = payloadRoot
+  while (currentPayload !== null) {
+    commitRenderPayload(currentPayload)
+    currentPayload = currentPayload.next
   }
 }
 
-export function completeRenderPayload(renderPayload: RenderPayloadNode): RenderPayloadNode | null {
+// 将渲染描述载荷提交到真正的 dom 上
+export function commitRenderPayload(renderPayload: RenderPayloadNode): RenderPayloadNode | null {
   if (renderPayload[RenderFlags.IS_RENDER_PAYLOAD]) {
     return null
   }

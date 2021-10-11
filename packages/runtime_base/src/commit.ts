@@ -6,7 +6,7 @@ import { teardownEffect, Effect } from "../../reactivity/src/effect";
 
 // payload 链表节点在 render 阶段按照由子到父的顺序插入，commit 时
 // 按照先后顺序遍历 commit payload 节点，即可保证 commit 的执行顺序
-export function commitRenderPayloads(payloadRoot: RenderPayloadNode) {
+export function commitRenderPayloads(payloadRoot: RenderPayloadNode): void {
   let currentPayload = payloadRoot
   while (currentPayload !== null) {
     commitRenderPayload(currentPayload)
@@ -15,11 +15,7 @@ export function commitRenderPayloads(payloadRoot: RenderPayloadNode) {
 }
 
 // 将渲染描述载荷提交到真正的 dom 上
-export function commitRenderPayload(renderPayload: RenderPayloadNode): RenderPayloadNode | null {
-  if (renderPayload[RenderFlags.IS_RENDER_PAYLOAD]) {
-    return null
-  }
-
+export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
   const {
     type,
     tag,
@@ -27,26 +23,23 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): RenderPay
     container,
     parentContainer,
     anchorContainer,
-    next
+    context
   } = renderPayload
   if (type & RenderUpdateTypes.PATCH_PROP) {
     // commit 属性到 dom
     commitProps(container, props)
   }
+
   if (type & RenderUpdateTypes.MOUNT) {
     commitMountMutation(tag, props, parentContainer, anchorContainer)
   }
 
-  // 返回下一个需要处理的 RenderPayloadNode
-  if (next) {
-    if (next[RenderFlags.IS_RENDER_PAYLOAD]) {
-      return next
-    } else {
-      return null
-    }
-  } else {
-    // 同级节点遍历到末端，开始向祖先节点回溯
-    return renderPayload.parent
+  if (type & RenderUpdateTypes.UNMOUNT) {
+    commitUnmountMutation(container, parentContainer, context)
+  }
+
+  if (type & RenderUpdateTypes.MOVE) {
+    commitMoveMutation(container, parentContainer, anchorContainer)
   }
 }
 

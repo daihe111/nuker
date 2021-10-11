@@ -17,6 +17,7 @@ import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect } from "../../reactivity/src/effect";
+import { commitRenderPayloads } from "./commit";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -48,13 +49,10 @@ export interface RenderPayloadNode {
   anchorContainer?: Element | null
   tag?: string
   props: Record<string | number | symbol, any>
-  phase?: number
   context: Chip
 
   // pointers
   next: RenderPayloadNode | null
-  firstChild?: RenderPayloadNode | null
-  parent?: RenderPayloadNode
 }
 
 export const enum RenderModes {
@@ -456,7 +454,17 @@ export function performReconcileWork(oldChip: Chip, newChip: Chip): void {
 // 将单个成对节点的 reconcile 作为任务单元注册进调度系统
 export function registerOngoingReconcileWork(chip: Chip): void {
   registerJob(() => {
-    registerOngoingReconcileWork(reconcile(chip))
+    const next: Chip = reconcile(chip)
+    if (next && next[ChipFlags.IS_CHIP]) {
+      // 为下一组 reconcile 的节点注册任务
+      registerOngoingReconcileWork(next)
+    } else if (next === null) {
+      // 当前渲染周期内的所有 reconcile 任务全部执行完毕，注册 commit 任务
+      // commit 为单一同步任务，一旦开始执行便不可中断
+      registerJob(() => {
+        commitRenderPayloads(subRoot.renderPayloads)
+      })
+    }
   })
 }
 

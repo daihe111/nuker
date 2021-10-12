@@ -5,6 +5,7 @@ import {
   isReservedComponentTag
 } from './domOptions';
 import { isObject, isArray, isString, isNumber } from '../../share/src';
+import { RenderPayloadNode } from "./workRender";
 
 export type ChipTag = | string | void
 
@@ -23,14 +24,14 @@ export const enum ChipFlags {
 
 export interface ChipCore {
   tag: ChipTag
-  unitType: number
+  chipType: number
   props: ChipProps
   isSVG?: boolean
   is?: boolean
   children?: ChipChildren
 }
 
-export const enum UnitTypes {
+export const enum ChipTypes {
   INVALID_NODE = -1,
   NATIVE_DOM = 0,
   RESERVED_COMPONENT = 1,
@@ -40,13 +41,15 @@ export const enum UnitTypes {
 }
 
 export const ChipTypeNames = {
-  [UnitTypes.INVALID_NODE]: 'INVALID_NODE',
-  [UnitTypes.NATIVE_DOM]: 'NATIVE_DOM',
-  [UnitTypes.RESERVED_COMPONENT]: 'RESERVED_COMPONENT',
-  [UnitTypes.CUSTOM_COMPONENT]: 'CUSTOM_COMPONENT'
+  [ChipTypes.INVALID_NODE]: 'INVALID_NODE',
+  [ChipTypes.NATIVE_DOM]: 'NATIVE_DOM',
+  [ChipTypes.RESERVED_COMPONENT]: 'RESERVED_COMPONENT',
+  [ChipTypes.CUSTOM_COMPONENT]: 'CUSTOM_COMPONENT'
 }
 
 export const IS_CHIP = Symbol()
+
+export const IS_RECONCILE_SCOPE = Symbol()
 
 export interface ChipInstance {
 
@@ -76,9 +79,9 @@ export type ChipUnit = Chip | Chip | null
 // 操作数据时错误触发无效的 effect)
 export interface Chip extends ChipCore {
   [IS_CHIP]: true
+  [IS_RECONCILE_SCOPE]?: true // 标识是否是局部 diff 的 chip 域
 
   id: number // 节点编号 id (自增)
-  hostNode: unknown
   ref: ChipRef
   key: string | number | symbol
   elm: Element | null
@@ -91,6 +94,7 @@ export interface Chip extends ChipCore {
   // 存储节点对应的所有 effect，用于 chip 上下文销毁时对 effect 
   // 进行靶向移除
   effects?: ChipEffectUnit | null
+  renderPayloads?: RenderPayloadNode
 
   // pointers
   // chip 树中仅包含动态节点，在生成 chip 树时会将 dom 树
@@ -131,16 +135,16 @@ export function removeChip(chip: Chip): boolean {
 export function parseChipType(tag: ChipTag): number {
   if (typeof tag === 'string') {
     if (isReservedTag(tag)) {
-      return UnitTypes.NATIVE_DOM
+      return ChipTypes.NATIVE_DOM
     }
-    return UnitTypes.INVALID_NODE
+    return ChipTypes.INVALID_NODE
   } else if (typeof tag === 'object') {
     if (isReservedComponentTag(tag)) {
-      return UnitTypes.RESERVED_COMPONENT
+      return ChipTypes.RESERVED_COMPONENT
     }
-    return UnitTypes.CUSTOM_COMPONENT
+    return ChipTypes.CUSTOM_COMPONENT
   }
-  return UnitTypes.INVALID_NODE
+  return ChipTypes.INVALID_NODE
 }
 
 export function cloneChip(chip: Chip, props: object, children: ChipChildren): Chip {
@@ -179,7 +183,7 @@ export function createChip(
   children?: ChipChildren,
   patchFlag?: number
 ): Chip {
-  const unitType = parseChipType(tag)
+  const chipType = parseChipType(tag)
   return {
     tag,
     props,
@@ -187,7 +191,7 @@ export function createChip(
     patchFlag,
     elm: null,
     ref: null,
-    unitType,
+    chipType,
     instance: null,
     directives: [],
     components: [],

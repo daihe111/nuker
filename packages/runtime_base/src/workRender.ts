@@ -4,7 +4,7 @@ import {
   ChipUnit,
   ChipPhases,
   ChipChildren,
-  UnitTypes,
+  ChipTypes,
   ChipFlags,
   getFirstChipChild,
   ChipPropNode,
@@ -12,7 +12,7 @@ import {
   ChipTypeNames,
   cloneChip
 } from "./chip";
-import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction } from "../../share/src";
+import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, createEmptyObject } from "../../share/src";
 import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
@@ -30,8 +30,8 @@ export interface ChildrenRenderer {
 }
 
 export interface DynamicRenderData {
-  props: Record<string | number | symbol, any>
-  childrenRenderer: ChildrenRenderer
+  props?: Record<string | number | symbol, any>
+  childrenRenderer?: ChildrenRenderer
 }
 
 export const enum RenderFlags {
@@ -178,20 +178,20 @@ export function traverseChipTree(parent: Chip, children?: ChipChildren): void {
 
 // 为当前 chip 执行可供渲染用的相关准备工作
 export function initRenderWorkForChip(chip: Chip) {
-  switch (chip.unitType) {
-    case UnitTypes.CUSTOM_COMPONENT:
+  switch (chip.chipType) {
+    case ChipTypes.CUSTOM_COMPONENT:
       initRenderWorkForComponent(chip)
       break
-    case UnitTypes.RESERVED_COMPONENT:
+    case ChipTypes.RESERVED_COMPONENT:
       initRenderWorkForReservedComponent(chip)
       break
-    case UnitTypes.NATIVE_DOM:
+    case ChipTypes.NATIVE_DOM:
       initRenderWorkForElement(chip)
       break
-    case UnitTypes.CONDITION:
+    case ChipTypes.CONDITION:
       initRenderWorkForCondition(chip)
       break
-    case UnitTypes.FRAGMENT:
+    case ChipTypes.FRAGMENT:
       initRenderWorkForFragment(chip)
       break
   }
@@ -289,6 +289,7 @@ export function initRenderWorkForFragment(chip: Chip): void {
 
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
 export function completeRenderWorkForElement(chip: Chip) {
+  // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
   const parentElm = chip.parent.elm
   const elm = chip.elm
   if (parentElm && elm) {
@@ -297,18 +298,15 @@ export function completeRenderWorkForElement(chip: Chip) {
 
   // 检索当前 element 节点的属性，区分动态属性和静态属性
   const props = chip.props
-  const dynamicProps = new Map<string, any>()
   for (const propName in props) {
-    let { isDynamic, value } = (props[propName] as ChipPropNode)
+    // 收集动态属性，动态属性的 value 是 wrapper 化的，避免
+    // 访问属性 value 时是立即执行的
+    const { isDynamic, value } = (props[propName] as ChipPropNode)
     if (isDynamic) {
-      // 收集动态属性，动态属性的 value 是 wrapper 化的，避免
-      // 访问属性 value 时是立即执行的
-      dynamicProps.set(propName, value)
-
       // 针对当前 chip 节点的动态属性创建对应的渲染 effect
       effect<DynamicRenderData>(() => {
         // collector: 触发当前注册 effect 的收集行为
-        return (value = value.value)
+        return { props: { [propName]: value.value } }
       }, (newData: DynamicRenderData) => {
         // dispatcher: 响应式数据更新后触发
         return genRenderPayloads(chip, newData)
@@ -356,22 +354,46 @@ export function completeRenderWorkForCondition(chip: Chip) {
 
 // 完成 fragment 类型节点的渲染工作: 当前节点插入父 dom 容器
 export function completeRenderWorkForFragment(chip: Chip) {
+  const { source, render } = chip.instance
+  // 建立动态数据与渲染 effect 之间的关系
+  effect<DynamicRenderData>(() => {
+    // collector: 触发当前注册 effect 的收集行为
+    const rawSource = createEmptyObject()
+    for (const k in source) {
+      rawSource[k] = source[k].value
+    }
 
+    return {
+      childrenRenderer: {
+        render,
+        source: rawSource
+      }
+    }
+  }, (newData: DynamicRenderData) => {
+    // dispatcher: 响应式数据更新后触发
+    return genRenderPayloads(chip, newData)
+  }, {
+    collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
+    scheduler: (job: Job) => {
+      // 将渲染更新任务注册到调度系统中
+      registerJob(job)
+    }
+  })
 }
 
 // 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
 export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): void {
-  switch (chip.unitType) {
-    case UnitTypes.NATIVE_DOM:
+  switch (chip.chipType) {
+    case ChipTypes.NATIVE_DOM:
       completeRenderWorkForElement(chip)
       break
-    case UnitTypes.CUSTOM_COMPONENT:
+    case ChipTypes.CUSTOM_COMPONENT:
       completeRenderWorkForComponent(chip)
       break
-    case UnitTypes.CONDITION:
+    case ChipTypes.CONDITION:
       completeRenderWorkForCondition(chip)
       break
-    case UnitTypes.FRAGMENT:
+    case ChipTypes.FRAGMENT:
       completeRenderWorkForFragment(chip)
       break
     default:
@@ -392,8 +414,7 @@ export function createRenderPayloadNode(
   type: number,
   context: Chip,
   tag?: string,
-  props?: Record<string | number | symbol, any>,
-  childPayloadRoot?: RenderPayloadNode
+  props?: Record<string | number | symbol, any>
 ): RenderPayloadNode {
   return {
     [RenderFlags.IS_RENDER_PAYLOAD]: true,
@@ -401,7 +422,6 @@ export function createRenderPayloadNode(
     type,
     tag,
     props,
-    firstChild: childPayloadRoot,
     next: null,
     container,
     parentContainer,
@@ -445,19 +465,19 @@ export function genRenderPayloads(chip: Chip, renderData: DynamicRenderData): Re
 export function performReconcileWork(oldChip: Chip, newChip: Chip): void {
   try {
     newChip.wormhole = oldChip
-    registerOngoingReconcileWork(newChip)
+    registerOngoingReconcileWork(newChip, newChip)
   } catch (e) {
 
   }
 }
 
 // 将单个成对节点的 reconcile 作为任务单元注册进调度系统
-export function registerOngoingReconcileWork(chip: Chip): void {
+export function registerOngoingReconcileWork(subRoot: Chip, chip: Chip): void {
   registerJob(() => {
     const next: Chip = reconcile(chip)
     if (next && next[ChipFlags.IS_CHIP]) {
       // 为下一组 reconcile 的节点注册任务
-      registerOngoingReconcileWork(next)
+      registerOngoingReconcileWork(subRoot, next)
     } else if (next === null) {
       // 当前渲染周期内的所有 reconcile 任务全部执行完毕，注册 commit 任务
       // commit 为单一同步任务，一旦开始执行便不可中断
@@ -524,7 +544,7 @@ export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
 }
 
 export function mount(oldChip: Chip, newChip: Chip, anchor: Element): void {
-  if (newChip.chipType === UnitTypes.FRAGMENT) {
+  if (newChip.chipType === ChipTypes.FRAGMENT) {
 
   } else if (newChip[ChipFlags.IS_CHIP]) {
     const { context } = oldChip
@@ -542,7 +562,7 @@ export function mount(oldChip: Chip, newChip: Chip, anchor: Element): void {
 }
 
 export function unmount(chip: Chip): void {
-  if (chip.chipType === UnitTypes.FRAGMENT) {
+  if (chip.chipType === ChipTypes.FRAGMENT) {
     const children = (chip.children as Chip[])
     for (let i = 0; i < children.length; i++) {
       unmount(children[i])

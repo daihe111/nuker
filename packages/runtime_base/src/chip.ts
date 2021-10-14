@@ -5,7 +5,8 @@ import {
   isReservedComponentTag
 } from './domOptions';
 import { isObject, isArray, isString, isNumber } from '../../share/src';
-import { RenderPayloadNode } from "./workRender";
+import { RenderPayloadNode, ChildrenRenderer } from "./workRender";
+import { VirtualInstance } from "./virtualChip";
 
 export type ChipTag = | string | void
 
@@ -16,10 +17,11 @@ export interface ChipPropNode {
 
 export type ChipProps = Record<string, ChipPropNode>
 
-export type ChipChildren = Chip | Chip[]
+export type ChipChildren = Chip | Chip[] | ChildrenRenderer | null
 
 export const enum ChipFlags {
-  IS_CHIP = '__n_isChip'
+  IS_CHIP = '__n_isChip',
+  IS_RECONCILE_SCOPE = '__n_isReconcileScope'
 }
 
 export interface ChipCore {
@@ -47,13 +49,7 @@ export const ChipTypeNames = {
   [ChipTypes.CUSTOM_COMPONENT]: 'CUSTOM_COMPONENT'
 }
 
-export const IS_CHIP = Symbol()
-
-export const IS_RECONCILE_SCOPE = Symbol()
-
-export interface ChipInstance {
-
-}
+export type ChipInstance = ComponentInstance | VirtualInstance
 
 export interface ChipRef {
 
@@ -78,14 +74,14 @@ export type ChipUnit = Chip | Chip | null
 // 下文持有的状态进行清理 (节点所属 effects 一定要清理，防止后续
 // 操作数据时错误触发无效的 effect)
 export interface Chip extends ChipCore {
-  [IS_CHIP]: true
-  [IS_RECONCILE_SCOPE]?: true // 标识是否是局部 diff 的 chip 域
+  [ChipFlags.IS_CHIP]: true
+  [ChipFlags.IS_RECONCILE_SCOPE]?: boolean // 标识是否是局部 diff 的 chip 域
 
   id: number // 节点编号 id (自增)
   ref: ChipRef
-  key: string | number | symbol
+  key?: string | number | symbol
   elm: Element | null
-  instance: ComponentInstance | null
+  instance: ChipInstance | null
   directives?: unknown
   components?: unknown
   // 当前已转化为 chip 的 Chip child 索引，用于辅助 chip 树
@@ -110,7 +106,7 @@ export interface Chip extends ChipCore {
   phase?: number
   compileFlags?: number
   // 标记当前 chip 节点在 commit 阶段需要触发的 effect 类型
-  effectFlags: number
+  effectFlags?: number
 }
 
 export interface ChipRoot extends Chip {
@@ -118,6 +114,8 @@ export interface ChipRoot extends Chip {
   // 整颗 chip 树生成的全部副作用构成的链表队列 (按照由子到父的顺序)
   effects: ChipEffectUnit | null
 }
+
+let id = 0
 
 // 在触发源数据变化时触发 chip 更新，nuker 复用一颗 chip tree
 export function updateChip(chip: Chip, payload: object): Chip {
@@ -180,23 +178,25 @@ export function getFirstChipChild(children: ChipChildren): Chip {
 export function createChip(
   tag: ChipTag,
   props?: ChipProps,
-  children?: ChipChildren,
-  patchFlag?: number
+  children?: ChipChildren
 ): Chip {
   const chipType = parseChipType(tag)
   return {
+    [ChipFlags.IS_CHIP]: true,
+    id: id++,
     tag,
     props,
     children,
-    patchFlag,
-    elm: null,
     ref: null,
-    chipType,
+    elm: null,
     instance: null,
+    chipType,
     directives: [],
     components: [],
-
-    parent: null,
+    parent: null
+    prevSibling: null
     nextSibling: null
+    firstChild: null
+    wormhole: null
   }
 }

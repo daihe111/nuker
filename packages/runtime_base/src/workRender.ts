@@ -10,7 +10,8 @@ import {
   ChipPropNode,
   isSameChip,
   ChipTypeNames,
-  cloneChip
+  cloneChip,
+  createChip
 } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, createEmptyObject } from "../../share/src";
 import { registerJob, Job } from "./scheduler";
@@ -18,6 +19,7 @@ import { ComponentInstance, Component, createComponentInstance, reuseComponentIn
 import { domOptions } from "./domOptions";
 import { effect } from "../../reactivity/src/effect";
 import { commitRenderPayloads } from "./commit";
+import { createVirtualChipInstance } from "./virtualChip";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -189,10 +191,8 @@ export function initRenderWorkForChip(chip: Chip) {
       initRenderWorkForElement(chip)
       break
     case ChipTypes.CONDITION:
-      initRenderWorkForCondition(chip)
-      break
     case ChipTypes.FRAGMENT:
-      initRenderWorkForFragment(chip)
+      initRenderWorkForVirtualChip(chip)
       break
   }
 }
@@ -254,16 +254,9 @@ export function createChipFromChip(chip: Chip): Chip | null {
 
 // 初始化 component 类型节点的渲染工作
 export function initRenderWorkForComponent(chip: Chip): void {
-  const instance = chip.instance
-  if (instance === null) {
-    // first mount 创建组件类型 chip 对应的 instance
-    currentRenderingInstance = chip.instance = createComponentInstance((chip.tag as Component), chip)
-    // mount component
-    mountComponent()
-  } else {
-    // 复用已经存在的 instance
-    chip.instance = reuseComponentInstance(instance, chip)
-  }
+  chip.instance = createComponentInstance((chip.tag as Component), chip)
+  // TODO 组件初始化阶段需要完成的其他工作
+  
 }
 
 // 初始化 nuker 内置 component 类型节点的渲染工作
@@ -277,14 +270,9 @@ export function initRenderWorkForElement(chip: Chip) {
   chip.elm = domOptions.createElement(tag, isSVG, is)
 }
 
-// 初始化 condition 类型节点的渲染工作
-export function initRenderWorkForCondition(chip: Chip): void {
-
-}
-
-// 初始化 fragment 类型节点的渲染工作
-export function initRenderWorkForFragment(chip: Chip): void {
-
+// 初始化虚拟容器类型节点的渲染工作
+export function initRenderWorkForVirtualChip(chip: Chip): void {
+  chip.instance = createVirtualChipInstance(chip)
 }
 
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
@@ -347,13 +335,8 @@ export function completeRenderWorkForComponent(chip: Chip) {
 
 }
 
-// 完成 condition 类型节点的渲染工作: 当前节点插入父 dom 容器
-export function completeRenderWorkForCondition(chip: Chip) {
-
-}
-
-// 完成 fragment 类型节点的渲染工作: 当前节点插入父 dom 容器
-export function completeRenderWorkForFragment(chip: Chip) {
+// 完成虚拟容器类型节点的渲染工作: 当前节点插入父 dom 容器
+export function completeRenderWorkForVirtualChip(chip: Chip) {
   const { source, render } = chip.instance
   // 建立动态数据与渲染 effect 之间的关系
   effect<DynamicRenderData>(() => {
@@ -391,10 +374,8 @@ export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): v
       completeRenderWorkForComponent(chip)
       break
     case ChipTypes.CONDITION:
-      completeRenderWorkForCondition(chip)
-      break
     case ChipTypes.FRAGMENT:
-      completeRenderWorkForFragment(chip)
+      completeRenderWorkForVirtualChip(chip)
       break
     default:
       // nuker doesn't have this node type, a bug maybe occurred

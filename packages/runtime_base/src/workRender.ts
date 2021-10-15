@@ -17,9 +17,9 @@ import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, cre
 import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
-import { effect } from "../../reactivity/src/effect";
+import { effect, disableCollecting, enableCollecting } from "../../reactivity/src/effect";
 import { commitRenderPayloads } from "./commit";
-import { createVirtualChipInstance } from "./virtualChip";
+import { createVirtualChipInstance, VirtualInstance } from "./virtualChip";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -33,7 +33,7 @@ export interface ChildrenRenderer {
 
 export interface DynamicRenderData {
   props?: Record<string | number | symbol, any>
-  childrenRenderer?: ChildrenRenderer
+  children?: ChipChildren
 }
 
 export const enum RenderFlags {
@@ -138,6 +138,9 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
     initRenderWorkForChip(chip)
     chip.phase = ChipPhases.INITIALIZE
 
+    // 对于包含动态子节点执行器 render 的 chip，如虚拟容器类型、
+    // 组件类型的 chip 节点，init 阶段已经建立了父子关系，因此
+    // firstChild 已经有有效 chip 节点
     let firstChild = chip.firstChild
     if (!firstChild) {
       const firstChipChild = getFirstChipChild(chip.children)
@@ -254,9 +257,12 @@ export function createChipFromChip(chip: Chip): Chip | null {
 
 // 初始化 component 类型节点的渲染工作
 export function initRenderWorkForComponent(chip: Chip): void {
-  chip.instance = createComponentInstance((chip.tag as Component), chip)
-  // TODO 组件初始化阶段需要完成的其他工作
-  
+  const { source, render } = (chip.instance as ComponentInstance) = createComponentInstance((chip.tag as Component), chip)
+  // 此处仅通过 render 渲染器获取组件节点的子节点，不做响应式系统的依赖收集
+  disableCollecting()
+  chip.children = render(source)
+  // 恢复响应式系统的依赖收集
+  enableCollecting()
 }
 
 // 初始化 nuker 内置 component 类型节点的渲染工作
@@ -272,7 +278,26 @@ export function initRenderWorkForElement(chip: Chip) {
 
 // 初始化虚拟容器类型节点的渲染工作
 export function initRenderWorkForVirtualChip(chip: Chip): void {
-  chip.instance = createVirtualChipInstance(chip)
+  const { source, render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
+  // 建立响应式系统与渲染 effect 之间的关系
+  effect<DynamicRenderData>(() => {
+    // collector: 触发当前注册 effect 的收集行为
+    const children: ChipChildren = render(source)
+    // TODO 需要确认是否每次触发更新都更新 chip.children
+    chip.children = children
+    return { children }
+  }, (newData: DynamicRenderData) => {
+    // dispatcher: 响应式数据更新后触发
+    return genRenderPayloads(chip, newData)
+  }, {
+    collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
+    scheduler: (job: Job) => {
+      // 将渲染更新任务注册到调度系统中
+      registerJob(job)
+    }
+  })
+
+  // TODO 虚拟容器节点 props 也需要建立响应式关系
 }
 
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
@@ -337,31 +362,33 @@ export function completeRenderWorkForComponent(chip: Chip) {
 
 // 完成虚拟容器类型节点的渲染工作: 当前节点插入父 dom 容器
 export function completeRenderWorkForVirtualChip(chip: Chip) {
-  const { source, render } = chip.instance
-  // 建立动态数据与渲染 effect 之间的关系
-  effect<DynamicRenderData>(() => {
-    // collector: 触发当前注册 effect 的收集行为
-    const rawSource = createEmptyObject()
-    for (const k in source) {
-      rawSource[k] = source[k].value
-    }
+  // TODO 确认 virtual chip 是否还需要在 complete 阶段处理事情
 
-    return {
-      childrenRenderer: {
-        render,
-        source: rawSource
-      }
-    }
-  }, (newData: DynamicRenderData) => {
-    // dispatcher: 响应式数据更新后触发
-    return genRenderPayloads(chip, newData)
-  }, {
-    collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
-    scheduler: (job: Job) => {
-      // 将渲染更新任务注册到调度系统中
-      registerJob(job)
-    }
-  })
+  // const { source, render } = chip.instance
+  // // 建立动态数据与渲染 effect 之间的关系
+  // effect<DynamicRenderData>(() => {
+  //   // collector: 触发当前注册 effect 的收集行为
+  //   const rawSource = createEmptyObject()
+  //   for (const k in source) {
+  //     rawSource[k] = source[k].value
+  //   }
+
+  //   return {
+  //     childrenRenderer: {
+  //       render,
+  //       source: rawSource
+  //     }
+  //   }
+  // }, (newData: DynamicRenderData) => {
+  //   // dispatcher: 响应式数据更新后触发
+  //   return genRenderPayloads(chip, newData)
+  // }, {
+  //   collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
+  //   scheduler: (job: Job) => {
+  //     // 将渲染更新任务注册到调度系统中
+  //     registerJob(job)
+  //   }
+  // })
 }
 
 // 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
@@ -415,18 +442,15 @@ export function genRenderPayloads(chip: Chip, renderData: DynamicRenderData): Re
   // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 chip
   // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
-  const { props, childrenRenderer } = renderData
+  const { props, children } = renderData
   const { elm, tag } = chip
   let type = RenderUpdateTypes.PATCH_PROP
-  if (isObject(childrenRenderer)) {
+  if (children) {
     // 处理动态子节点，生成动态子节点的 RenderPayloadNode
-    const { source, render } = childrenRenderer
-    if (isFunction(render)) {
-      const newChip = cloneChip(chip, props, render(source))
-      // trigger diff
-      performReconcileWork(chip, newChip)
-      type = RenderUpdateTypes.PATCH_CHILDREN
-    }
+    const newChip = cloneChip(chip, props, children)
+    // trigger diff
+    performReconcileWork(chip, newChip)
+    type = RenderUpdateTypes.PATCH_CHILDREN
   }
 
   const payload = createRenderPayloadNode(

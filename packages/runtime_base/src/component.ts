@@ -1,4 +1,4 @@
-import { Chip } from "./chip";
+import { Chip, ChipChildren } from "./chip";
 import { isObject, isFunction, createEmptyObject } from "../../share/src";
 
 export interface OptionComponent {
@@ -19,6 +19,7 @@ export interface ComponentInstance {
   chip: Chip | null
   Component: Component
   source: object
+  render: (source: any) => ChipChildren
   refs: object[] | null
   [key: string]: any
 }

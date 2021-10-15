@@ -160,10 +160,16 @@ export function teardownEffect(effect: Effect) {
   })
 }
 
+/**
+ * 禁用响应式系统收集行为
+ */
 export function disableCollecting() {
   collectingFlag = CollectingFlags.COLLECTING_CLOSED
 }
 
+/**
+ * 开启响应式系统收集行为
+ */
 export function enableCollecting() {
   collectingFlag = CollectingFlags.COLLECTING_OPENED
 }

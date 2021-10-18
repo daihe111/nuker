@@ -251,10 +251,6 @@ export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) 
   }
 }
 
-export function createChipFromChip(chip: Chip): Chip | null {
-  return
-}
-
 // 初始化 component 类型节点的渲染工作
 export function initRenderWorkForComponent(chip: Chip): void {
   const { source, render } = (chip.instance as ComponentInstance) = createComponentInstance((chip.tag as Component), chip)
@@ -300,13 +296,25 @@ export function initRenderWorkForVirtualChip(chip: Chip): void {
   // TODO 虚拟容器节点 props 也需要建立响应式关系
 }
 
+
+/**
+ * 获取传入 chip 节点对应的可插入祖先 dom 容器
+ * @param chip 
+ */
+export function getAncestorContainer(chip: Chip): Element {
+  let current: Chip = chip.parent
+  while (current.elm === null)
+    current = current.parent
+  return current.elm
+}
+
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
 export function completeRenderWorkForElement(chip: Chip) {
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
-  const parentElm = chip.parent.elm
+  const parentElm: Element = getAncestorContainer(chip)
   const elm = chip.elm
   if (parentElm && elm) {
-    parentElm.appendChild(elm)
+    domOptions.appendChild(elm, parentElm)
   }
 
   // 检索当前 element 节点的属性，区分动态属性和静态属性

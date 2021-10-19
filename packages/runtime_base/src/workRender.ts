@@ -20,6 +20,7 @@ import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting } from "../../reactivity/src/effect";
 import { commitRenderPayloads } from "./commit";
 import { createVirtualChipInstance, VirtualInstance } from "./virtualChip";
+import { CompileFlags } from "./compileFlags";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -296,7 +297,6 @@ export function initRenderWorkForVirtualChip(chip: Chip): void {
   // TODO 虚拟容器节点 props 也需要建立响应式关系
 }
 
-
 /**
  * 获取传入 chip 节点对应的可插入祖先 dom 容器
  * @param chip 
@@ -487,7 +487,9 @@ export function performReconcileWork(oldChip: Chip, newChip: Chip): void {
 // 将单个成对节点的 reconcile 作为任务单元注册进调度系统
 export function registerOngoingReconcileWork(subRoot: Chip, chip: Chip): void {
   registerJob(() => {
-    const next: Chip = reconcile(chip)
+    let next: Chip = reconcile(chip)
+    next = skipReconcile(next)
+
     if (next && next[ChipFlags.IS_CHIP]) {
       // 为下一组 reconcile 的节点注册任务
       registerOngoingReconcileWork(subRoot, next)
@@ -501,12 +503,28 @@ export function registerOngoingReconcileWork(subRoot: Chip, chip: Chip): void {
   })
 }
 
+/**
+ * 检测 chip 的 reconcile 是否需要跳过
+ * @param chip 
+ */
+export function isSkipReconcile(chip: Chip): boolean {
+  const { compileFlags } = chip
+  const isStatic = compileFlags & CompileFlags.STATIC
+  return (isStatic && currentRenderingInstance.chip?.chipType !== ChipTypes.CONDITION)
+}
+
 // 每个节点的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
 export function reconcile(chip: Chip): Chip {
   let nextChip: Chip
   ongoingChip = chip
   switch (chip.phase) {
     case ChipPhases.PENDING:
+      // 1. 首次遍历
+      // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
+      // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
+      if (isSkipReconcile(chip)) {
+        nextChip = completeReconcile(chip, true)
+      }
       const children: ChipChildren = chip.children
       const firstChild: Chip = getFirstChipChild(children)
 
@@ -526,6 +544,7 @@ export function reconcile(chip: Chip): Chip {
 
       break
     case ChipPhases.INITIALIZE:
+      // 2. 回溯
       nextChip = completeReconcile(chip)
       break
   }
@@ -534,16 +553,33 @@ export function reconcile(chip: Chip): Chip {
 }
 
 // 完成 chip 节点的 reconcile 工作
-export function completeReconcile(chip: Chip): Chip {
+export function completeReconcile(chip: Chip, isSkipable: boolean = false): Chip {
   ongoingChip = chip
   chip.phase = ChipPhases.COMPLETE
 
-  // diff 出更新描述 RenderPayload
-  reconcileToGenRenderPayload(chip)
+  // 如果 chip 节点不跳过，则 diff 出更新描述 RenderPayload
+  if (!isSkipable) {
+    reconcileToGenRenderPayload(chip)
+  }
 
   // 获取下一个需要处理的 chip
   let sibling: Chip = chip.nextSibling
-  return sibling ? sibling : chip.parent
+  if (sibling === null) {
+    // 尝试创建有效 sibling 节点
+    const parent: Chip = chip.parent
+    sibling = parent?.children[++parent.currentChildIndex]
+    if (sibling !== null) {
+      chip.nextSibling = sibling
+      sibling.prevSibling = chip
+    }
+  }
+
+  if (sibling) {
+    sibling.parent = chip.parent
+    return sibling
+  } else {
+    return chip.parent
+  }
 }
 
 // 建立 chip 子节点之间的映射关系

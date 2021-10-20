@@ -110,9 +110,10 @@ export interface Chip extends ChipCore {
 }
 
 export interface ChipRoot extends Chip {
-  hasMounted: boolean
   // 整颗 chip 树生成的全部副作用构成的链表队列 (按照由子到父的顺序)
   effects: ChipEffectUnit | null
+  // chip 树结构是否稳定
+  isStable: boolean
 }
 
 let id = 0

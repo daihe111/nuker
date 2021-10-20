@@ -18,7 +18,7 @@ import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting } from "../../reactivity/src/effect";
-import { commitRenderPayloads } from "./commit";
+import { commitRenderPayloads, commitProps } from "./commit";
 import { createVirtualChipInstance, VirtualInstance } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 
@@ -136,7 +136,7 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
 
   if (chip.phase === ChipPhases.PENDING) {
     // 首次遍历处理当前 chip 节点
-    initRenderWorkForChip(chip)
+    initRenderWorkForChip(chip, chipRoot)
     chip.phase = ChipPhases.INITIALIZE
 
     // 对于包含动态子节点执行器 render 的 chip，如虚拟容器类型、
@@ -183,7 +183,7 @@ export function traverseChipTree(parent: Chip, children?: ChipChildren): void {
 }
 
 // 为当前 chip 执行可供渲染用的相关准备工作
-export function initRenderWorkForChip(chip: Chip) {
+export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot) {
   switch (chip.chipType) {
     case ChipTypes.CUSTOM_COMPONENT:
       initRenderWorkForComponent(chip)
@@ -196,7 +196,7 @@ export function initRenderWorkForChip(chip: Chip) {
       break
     case ChipTypes.CONDITION:
     case ChipTypes.FRAGMENT:
-      initRenderWorkForVirtualChip(chip)
+      initRenderWorkForVirtualChip(chip, chipRoot)
       break
   }
 }
@@ -274,7 +274,7 @@ export function initRenderWorkForElement(chip: Chip) {
 }
 
 // 初始化虚拟容器类型节点的渲染工作
-export function initRenderWorkForVirtualChip(chip: Chip): void {
+export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): void {
   const { source, render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
   // 建立响应式系统与渲染 effect 之间的关系
   effect<DynamicRenderData>(() => {
@@ -285,7 +285,9 @@ export function initRenderWorkForVirtualChip(chip: Chip): void {
     return { children }
   }, (newData: DynamicRenderData) => {
     // dispatcher: 响应式数据更新后触发
-    return genRenderPayloads(chip, newData)
+    // 虚拟容器节点的内部结构不稳定，因此需要 diff 来产生 render payloads，
+    // 因此不能走同步渲染模式，而是走 concurrent 渲染模式
+    return genRenderPayloads(chip, chipRoot, newData)
   }, {
     collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
     scheduler: (job: Job) => {
@@ -309,7 +311,7 @@ export function getAncestorContainer(chip: Chip): Element {
 }
 
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
-export function completeRenderWorkForElement(chip: Chip) {
+export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
   const parentElm: Element = getAncestorContainer(chip)
   const elm = chip.elm
@@ -325,12 +327,15 @@ export function completeRenderWorkForElement(chip: Chip) {
     const { isDynamic, value } = (props[propName] as ChipPropNode)
     if (isDynamic) {
       // 针对当前 chip 节点的动态属性创建对应的渲染 effect
+      const isStable: boolean = chipRoot.isStable
       effect<DynamicRenderData>(() => {
         // collector: 触发当前注册 effect 的收集行为
         return { props: { [propName]: value.value } }
       }, (newData: DynamicRenderData) => {
         // dispatcher: 响应式数据更新后触发
-        return genRenderPayloads(chip, newData)
+        return isStable ?
+          commitProps(chip.elm, newData.props) :
+          genRenderPayloads(chip, chipRoot, newData)
       }, {
         collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
         scheduler: (job: Job) => {
@@ -370,40 +375,14 @@ export function completeRenderWorkForComponent(chip: Chip) {
 
 // 完成虚拟容器类型节点的渲染工作: 当前节点插入父 dom 容器
 export function completeRenderWorkForVirtualChip(chip: Chip) {
-  // TODO 确认 virtual chip 是否还需要在 complete 阶段处理事情
 
-  // const { source, render } = chip.instance
-  // // 建立动态数据与渲染 effect 之间的关系
-  // effect<DynamicRenderData>(() => {
-  //   // collector: 触发当前注册 effect 的收集行为
-  //   const rawSource = createEmptyObject()
-  //   for (const k in source) {
-  //     rawSource[k] = source[k].value
-  //   }
-
-  //   return {
-  //     childrenRenderer: {
-  //       render,
-  //       source: rawSource
-  //     }
-  //   }
-  // }, (newData: DynamicRenderData) => {
-  //   // dispatcher: 响应式数据更新后触发
-  //   return genRenderPayloads(chip, newData)
-  // }, {
-  //   collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
-  //   scheduler: (job: Job) => {
-  //     // 将渲染更新任务注册到调度系统中
-  //     registerJob(job)
-  //   }
-  // })
 }
 
 // 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
 export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): void {
   switch (chip.chipType) {
     case ChipTypes.NATIVE_DOM:
-      completeRenderWorkForElement(chip)
+      completeRenderWorkForElement(chip, chipRoot)
       break
     case ChipTypes.CUSTOM_COMPONENT:
       completeRenderWorkForComponent(chip)
@@ -446,7 +425,7 @@ export function createRenderPayloadNode(
 }
 
 // 生成更新描述信息
-export function genRenderPayloads(chip: Chip, renderData: DynamicRenderData): RenderPayloadNode {
+export function genRenderPayloads(chip: Chip, chipRoot: ChipRoot, renderData: DynamicRenderData): RenderPayloadNode {
   // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 chip
   // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
@@ -487,8 +466,7 @@ export function performReconcileWork(oldChip: Chip, newChip: Chip): void {
 // 将单个成对节点的 reconcile 作为任务单元注册进调度系统
 export function registerOngoingReconcileWork(subRoot: Chip, chip: Chip): void {
   registerJob(() => {
-    let next: Chip = reconcile(chip)
-    next = skipReconcile(next)
+    const next: Chip = reconcile(chip)
 
     if (next && next[ChipFlags.IS_CHIP]) {
       // 为下一组 reconcile 的节点注册任务
@@ -505,7 +483,7 @@ export function registerOngoingReconcileWork(subRoot: Chip, chip: Chip): void {
 
 /**
  * 检测 chip 的 reconcile 是否需要跳过
- * @param chip 
+ * @param chip
  */
 export function isSkipReconcile(chip: Chip): boolean {
   const { compileFlags } = chip
@@ -587,44 +565,42 @@ export function mapChipChildren(oldChildren: ChipChildren, newChildren: ChipChil
 
 }
 
-// 新旧 chip diff 生成更新描述
+// 新旧 chip (仅 chip 节点本身) diff 生成更新描述
+// 配对方式有以下几种:
+// · 类型、key 均相同的相似节点
+// · 旧节点为 null，新节点为有效节点
+// TODO 需删除的旧节点在 diff 过程中创建渲染描述
 export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
-
-}
-
-export function mount(oldChip: Chip, newChip: Chip, anchor: Element): void {
-  if (newChip.chipType === ChipTypes.FRAGMENT) {
-
-  } else if (newChip[ChipFlags.IS_CHIP]) {
-    const { context } = oldChip
-    const { tag, props } = newChip
-    currentRenderPayload.next = createRenderPayloadNode(
+  const { tag, props, wormhole, elm } = chip
+  if (chip.wormhole) {
+    // 有匹配的旧节点，且新旧 chip 节点一定是相似节点
+    const propsToPatch: object = reconcileProps(props, wormhole?.props)
+    currentRenderPayload = currentRenderPayload.next = createRenderPayloadNode(
+      elm,
       null,
       null,
-      null,
+      RenderUpdateTypes.PATCH_PROP,
+      chip,
+      (tag as string),
+      propsToPatch
+    )
+  } else {
+    // 无匹配到的旧 chip 节点，新 chip 为待挂载节点
+    currentRenderPayload = currentRenderPayload.next = createRenderPayloadNode(
+      elm,
+      domOptions.parentNode(elm),
+      null, // TODO anchor 解析逻辑待补充
       RenderUpdateTypes.MOUNT,
-      context,
+      chip,
       (tag as string),
       props
     )
   }
+  
+  return currentRenderPayload
 }
 
-export function unmount(chip: Chip): void {
-  if (chip.chipType === ChipTypes.FRAGMENT) {
-    const children = (chip.children as Chip[])
-    for (let i = 0; i < children.length; i++) {
-      unmount(children[i])
-    }
-  } else if (chip[ChipFlags.IS_CHIP]) {
-    const { elm, context } = chip
-    const parentContainer: Element = domOptions.parentNode(elm)
-    currentRenderPayload.next = createRenderPayloadNode(
-      elm,
-      parentContainer,
-      null,
-      RenderUpdateTypes.UNMOUNT,
-      context
-    )
-  }
+// 
+export function reconcileProps(newProps: object, oldProps: object): object {
+
 }

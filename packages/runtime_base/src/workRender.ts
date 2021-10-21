@@ -11,14 +11,15 @@ import {
   isSameChip,
   ChipTypeNames,
   cloneChip,
-  createChip
+  createChip,
+  ChipProps
 } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, createEmptyObject } from "../../share/src";
 import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting } from "../../reactivity/src/effect";
-import { commitRenderPayloads, commitProps } from "./commit";
+import { commitRenderPayloads, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 
@@ -600,7 +601,33 @@ export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
   return currentRenderPayload
 }
 
-// 
-export function reconcileProps(newProps: object, oldProps: object): object {
+/**
+ * 两组 props diff 生成变化 prop 的集合
+ * @param newProps 
+ * @param oldProps 
+ */
+export function reconcileProps(newProps: ChipProps, oldProps: ChipProps): Record<string, any> {
+  const ret = createEmptyObject()
+  // 遍历新 props，找出需要 patch 的 prop
+  for (const propName in newProps) {
+    const value = newProps[propName]?.value
+    if (propName in oldProps) {
+      if (value !== oldProps[propName]?.value) {
+        ret[propName] = value
+      }
+    } else {
+      ret[propName] = value
+    }
+  }
 
+  // 遍历旧 props，将在新 props 中已经不存在的属性作为待删除项添加到返回结果中
+  for (const propName in oldProps) {
+    if (propName in newProps) {
+      continue
+    }
+
+    ret[propName] = PROP_TO_DELETE
+  }
+
+  return ret
 }

@@ -1,8 +1,9 @@
-import { RenderPayloadNode, RenderFlags, RenderUpdateTypes, completeChip } from "./workRender";
-import { isObject, isEmptyObject } from "../../share/src";
+import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
-import { Chip, ChipPhases } from "./chip";
-import { teardownEffect, Effect } from "../../reactivity/src/effect";
+import { Chip } from "./chip";
+
+// 待删除 prop 的占位标志位
+export const PROP_TO_DELETE = Symbol()
 
 // payload 链表节点在 render 阶段按照由子到父的顺序插入，commit 时
 // 按照先后顺序遍历 commit payload 节点，即可保证 commit 的执行顺序
@@ -43,14 +44,35 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
   }
 }
 
+/**
+ * 将 props patch 到真实的 dom 上
+ * @param container 
+ * @param props 
+ */
 export function commitProps(container: Element, props: object) {
-  if (container && isObject(props) && !isEmptyObject(props)) {
-    for (const key in props) {
-      container.setAttribute(key, props[key])
+  if (container && props) {
+    for (const propName in props) {
+      const value: symbol | any = props[propName]
+      if (value === PROP_TO_DELETE) {
+        domOptions.removeAttribute(container, propName)
+      } else {
+        try {
+          domOptions.setAttribute(container, propName, `${value}`)
+        } catch (e) {
+          // TODO 属性值格式化 string 错误时进行报错提示
+        }
+      }
     }
   }
 }
 
+/**
+ * 向真实 dom 挂载全新的节点
+ * @param tag 
+ * @param props 
+ * @param parentContainer 
+ * @param anchorContainer 
+ */
 export function commitMountMutation(
   tag: string,
   props: object,
@@ -69,6 +91,12 @@ export function commitMountMutation(
   }
 }
 
+/**
+ * 将目标节点从真实 dom 上卸载
+ * @param target 
+ * @param parentContainer 
+ * @param context 
+ */
 export function commitUnmountMutation(
   target: Element,
   parentContainer: Element,
@@ -81,6 +109,12 @@ export function commitUnmountMutation(
   }
 }
 
+/**
+ * dom 节点移动位置
+ * @param target 
+ * @param parentContainer 
+ * @param anchor 
+ */
 export function commitMoveMutation(
   target: Element,
   parentContainer: Element,
@@ -92,31 +126,3 @@ export function commitMoveMutation(
     domOptions.insert(clone, parentContainer, anchor)
   }
 }
-
-export function clearChipContext(context: Chip) {
-  let currentEffect = context.effects
-  while (currentEffect !== null) {
-    // 将当前 effect 从依赖仓库中卸载
-    teardownEffect(currentEffect.effect)
-    currentEffect = currentEffect.next
-  }
-
-  // 将 chip context 从树中移除
-  const {
-    prevSibling: previous,
-    nextSibling: next
-  } = context
-  if (previous) {
-    previous.nextSibling = next
-    if (next) {
-      next.prevSibling = previous
-    }
-  } else {
-    next.prevSibling = null
-    context.parent.firstChild = next
-  }
-  context.parent = context.prevSibling = context.nextSibling = null
-}
-
-
-

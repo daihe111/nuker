@@ -63,6 +63,14 @@ export const domOptions = {
 
   createComment: text => doc.createComment(text),
 
+  setAttribute: (node, key, value) => {
+    node.setAttribute(key, value)
+  },
+
+  removeAttribute: (node, key) => {
+    node.removeAttribute(key)
+  },
+
   setText: (node, text) => {
     node.nodeValue = text
   },

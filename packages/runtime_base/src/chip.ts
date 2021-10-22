@@ -61,6 +61,12 @@ export interface ChipEffectUnit {
   next: ChipEffectUnit
 }
 
+export interface ContextUpdaterUnit {
+  updater: () => void
+  previous: ContextUpdaterUnit
+  next: ContextUpdaterUnit
+}
+
 export const enum ChipPhases {
   PENDING = 0,
   INITIALIZE = 1,
@@ -68,6 +74,8 @@ export const enum ChipPhases {
 }
 
 export type ChipUnit = Chip | Chip | null
+
+export type ChipKey = string | number | symbol
 
 // chip 是每个节点 (native dom | component) 的独立上下文，
 // 与节点本身共存，节点销毁时 chip 上下文一并销毁，并需要对上
@@ -79,7 +87,7 @@ export interface Chip extends ChipCore {
 
   id: number // 节点编号 id (自增)
   ref: ChipRef
-  key?: string | number | symbol
+  key?: ChipKey
   elm: Element | null
   instance: ChipInstance | null
   directives?: unknown
@@ -112,6 +120,8 @@ export interface Chip extends ChipCore {
 export interface ChipRoot extends Chip {
   // 整颗 chip 树生成的全部副作用构成的链表队列 (按照由子到父的顺序)
   effects: ChipEffectUnit | null
+  // chip 树渲染信息更新任务队列
+  cotextUpdaters: ContextUpdaterUnit | null
   // chip 树结构是否稳定
   isStable: boolean
 }

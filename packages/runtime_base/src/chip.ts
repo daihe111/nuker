@@ -122,6 +122,8 @@ export interface ChipRoot extends Chip {
   effects: ChipEffectUnit | null
   // chip 树渲染信息更新任务队列
   cotextUpdaters: ContextUpdaterUnit | null
+  // 渲染描述载荷队列
+  renderPayloads: RenderPayloadNode
   // chip 树结构是否稳定
   isStable: boolean
 }

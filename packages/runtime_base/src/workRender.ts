@@ -19,7 +19,7 @@ import { registerJob, Job } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting } from "../../reactivity/src/effect";
-import { commitRenderPayloads, commitProps, PROP_TO_DELETE } from "./commit";
+import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 
@@ -437,7 +437,7 @@ export function genRenderPayloads(chip: Chip, chipRoot: ChipRoot, renderData: Dy
     // 处理动态子节点，生成动态子节点的 RenderPayloadNode
     const newChip = cloneChip(chip, props, children)
     // trigger diff
-    performReconcileWork(chip, newChip)
+    performReconcileWork(chip, newChip, chipRoot)
     type = RenderUpdateTypes.PATCH_CHILDREN
   }
 
@@ -455,28 +455,28 @@ export function genRenderPayloads(chip: Chip, chipRoot: ChipRoot, renderData: Dy
 }
 
 // diff 执行入口函数
-export function performReconcileWork(oldChip: Chip, newChip: Chip): void {
+export function performReconcileWork(oldChip: Chip, newChip: Chip, chipRoot: ChipRoot): void {
   try {
     newChip.wormhole = oldChip
-    registerOngoingReconcileWork(newChip, newChip)
+    registerOngoingReconcileWork(chipRoot, newChip)
   } catch (e) {
 
   }
 }
 
 // 将单个成对节点的 reconcile 作为任务单元注册进调度系统
-export function registerOngoingReconcileWork(subRoot: Chip, chip: Chip): void {
+export function registerOngoingReconcileWork(chipRoot: ChipRoot, chip: Chip): void {
   registerJob(() => {
     const next: Chip = reconcile(chip)
 
     if (next && next[ChipFlags.IS_CHIP]) {
       // 为下一组 reconcile 的节点注册任务
-      registerOngoingReconcileWork(subRoot, next)
+      registerOngoingReconcileWork(chipRoot, next)
     } else if (next === null) {
       // 当前渲染周期内的所有 reconcile 任务全部执行完毕，注册 commit 任务
       // commit 为单一同步任务，一旦开始执行便不可中断
       registerJob(() => {
-        commitRenderPayloads(subRoot.renderPayloads)
+        performCommitWork(chipRoot)
       })
     }
   })

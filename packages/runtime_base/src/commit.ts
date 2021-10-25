@@ -1,18 +1,31 @@
 import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
-import { Chip } from "./chip";
+import { Chip, ChipRoot } from "./chip";
+import { performContextUpdateWork } from "./idle";
 
 // 待删除 prop 的占位标志位
 export const PROP_TO_DELETE = Symbol()
 
 // payload 链表节点在 render 阶段按照由子到父的顺序插入，commit 时
 // 按照先后顺序遍历 commit payload 节点，即可保证 commit 的执行顺序
-export function commitRenderPayloads(payloadRoot: RenderPayloadNode): void {
-  let currentPayload = payloadRoot
+export function performCommitWork(chipRoot: ChipRoot): void {
+  let currentPayload = chipRoot.renderPayloads
+  let i = 0
   while (currentPayload !== null) {
-    commitRenderPayload(currentPayload)
-    currentPayload = currentPayload.next
+    try {
+      commitRenderPayload(currentPayload)
+      currentPayload = currentPayload.next
+    } catch (e) {
+      // 当前 commit 任务失败，重试 3 次，重试次数达到后继续执行后面的任务
+      if (++i > 2) {
+        currentPayload = currentPayload.next
+        i = 0
+      }
+    }
   }
+
+  // 进入 idle 阶段，批量执行 chip 更新任务
+  performContextUpdateWork(chipRoot)
 }
 
 // 将渲染描述载荷提交到真正的 dom 上
@@ -104,8 +117,6 @@ export function commitUnmountMutation(
 ) {
   if (parentContainer && target) {
     domOptions.remove(target, parentContainer)
-    // 进行对应 chip context 清理
-    clearChipContext(context)
   }
 }
 

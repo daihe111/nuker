@@ -15,7 +15,7 @@ import {
   ChipProps
 } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, createEmptyObject } from "../../share/src";
-import { registerJob, Job } from "./scheduler";
+import { registerJob, Job, RegisterModes } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting } from "../../reactivity/src/effect";
@@ -465,7 +465,11 @@ export function performReconcileWork(oldChip: Chip, newChip: Chip, chipRoot: Chi
 }
 
 // 将单个成对节点的 reconcile 作为任务单元注册进调度系统
-export function registerOngoingReconcileWork(chipRoot: ChipRoot, chip: Chip): void {
+export function registerOngoingReconcileWork(
+  chipRoot: ChipRoot,
+  chip: Chip,
+  registerMode: number = RegisterModes.AFTER_BLASTING_POINT
+): void {
   registerJob(() => {
     const next: Chip = reconcile(chip)
 

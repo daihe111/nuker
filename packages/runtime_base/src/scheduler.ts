@@ -7,9 +7,6 @@ import {
   hasOwn,
   genBaseListNode
 } from "../../share/src"
-import {
-  BaseListNode
-} from '../../share/src/shareTypes'
 
 export interface Job<T = any> {
   (...args: any[]): T | Job | void
@@ -28,7 +25,10 @@ export interface Job<T = any> {
   options?: JobOptions
 }
 
-export interface JobNode extends BaseListNode {
+export interface JobNode {
+  job: Job
+  previous: JobNode
+  next: JobNode
   isRoot?: boolean
   type?: number | string
 }
@@ -36,6 +36,11 @@ export interface JobNode extends BaseListNode {
 export const enum JobListTypes {
   JOB_LIST = 0,
   BACKUP_LIST = 1
+}
+
+export const enum RegisterModes {
+  DEFAULT_ORDER = 0, // 任务按照默认顺序注册，即按照过期时间进行排序注册
+  AFTER_BLASTING_POINT = 1 // 注册到正在执行任务的后方
 }
 
 export const enum SchedulerFlags {
@@ -85,6 +90,7 @@ export const enum MacrotaskTypes {
   BROADCAST = 1 // port postMessage
 }
 
+const jobContentKey: string = 'job'
 let id = 0
 // 每帧的时间片单元，是每帧时间内用来执行 js 逻辑的最长时长，任务
 // 连续执行超过时间片单元，就需要中断执行把主线程让给优先级更高的任务
@@ -99,7 +105,7 @@ let isLoopRunning = false
 // 任务 loop 是否可执行
 let isLoopValid = true
 let timer: number | void
-let currentJobNode: JobNode | void
+let currentJobNode: JobNode
 
 // 任务队列使用链表的原因: 插入任务只需要查找和 1 次插入的开销，
 // 如果使用数组这种连续存储结构，需要查找和移动元素的开销
@@ -144,8 +150,10 @@ export function registerJob(
   priority: number = JobPriorities.NORMAL,
   timeout?: number,
   delay: number = 0,
-  options: JobOptions = EMPTY_OBJ
+  options: JobOptions = EMPTY_OBJ,
+  registerMode?: number
 ): Job {
+  // 初始化任务的保质期
   if (!isNumber(timeout)) {
     switch (priority) {
       case JobPriorities.IMMEDIATE:
@@ -169,29 +177,34 @@ export function registerJob(
     }
   }
 
+  // 初始化任务注册模式
+  registerMode = isNumber(registerMode) ? registerMode : RegisterModes.DEFAULT_ORDER
+
   // 优先以 job 本身携带的信息为准，因为 job 有可能重复注册
   job.id = `${SchedulerFlags.JOB_ID_BASE}${id++}`
   job.priority = job.priority || priority
   job.birth = genCurrentTime()
   job.timeout = job.timeout || timeout
   job.startTime = job.birth + job.delay
-  job.expirationTime = job.startTime + job.timeout
   job.delay = job.delay || delay
   job.options = job.options || options
   job.controller = createJobControllers(job, jobListRoot)
+  if (registerMode !== RegisterModes.AFTER_BLASTING_POINT) {
+    job.expirationTime = job.startTime + job.timeout
+  }
 
   // 为祖先任务创建子任务快照
   if (__DEV__ && options.openSnapshot) {
     createSnapshotForAncestor(job)
   }
 
-  assignJob(job)
+  assignJob(job, registerMode)
   return job
 }
 
 // 为祖先任务创建快照容器
 export function createSnapshotForAncestor(job: Job) {
-  job.scopedSnapshot = genBaseListNode(null, jobContentKey)
+  job.scopedSnapshot = createJobNode(null)
   // 创建快照双向循环链表，便于进行尾部节点的访问，省去遍历节点的开销
   job.scopedSnapshot.next = job.scopedSnapshot
   job.scopedSnapshot.previous = job.scopedSnapshot
@@ -207,9 +220,9 @@ export function createSnapshotForAncestor(job: Job) {
 export function flushJobs(jobRoot: JobNode): boolean {
   isLoopPending = false
   isLoopRunning = true
-  let currentNode = head(jobRoot)
+  currentJobNode = head(jobRoot)
   deadline = genCurrentTime() + timeUnit
-  while (currentNode !== null && isLoopValid) {
+  while (currentJobNode !== null && isLoopValid) {
     if (shouldYield()) {
       // 当前 loop 执行中断结束，执行权让给高优先级的任务.
       // 将高优先级的任务添加到执行队列，然后在下一个 loop
@@ -222,7 +235,7 @@ export function flushJobs(jobRoot: JobNode): boolean {
 
     // 任务过期了，需要将过期任务从执行队列中转移到备选队列，
     // 然后等到当前 loop 结束后再从备选队列中进行任务调度
-    const currentJob = currentNode.job
+    const currentJob = currentJobNode.job
     const isExpired = currentJob.expirationTime < genCurrentTime()
     if (isExpired && !currentJob.isExpired) {
       // 过期任务首次被标记过期，会将其移动到备选任务队列，
@@ -231,19 +244,19 @@ export function flushJobs(jobRoot: JobNode): boolean {
       popJob(jobListRoot)
       currentJob.isExpired = true
       pushJob(currentJob, backupListRoot)
-      currentNode = head(jobListRoot)
+      currentJobNode = head(jobListRoot)
       continue
     }
 
     // 任务如果返回子任务，说明该任务未执行完毕，后面还会
     // 继续执行，因此当前任务节点不出队，将子任务替换到当前
     // 任务节点上
-    const childJob = invokeJob(currentNode)
+    const childJob = invokeJob(currentJobNode)
     if (childJob === null) {
       // 当前任务执行完毕，移出任务队列
       popJob(jobRoot)
     }
-    currentNode = head(jobRoot)
+    currentJobNode = head(jobRoot)
   }
 
   // 当前 loop 结束
@@ -376,7 +389,7 @@ export function invokeJob(jobNode: JobNode): Job | null {
 
     // 将当前已执行完的子任务添加进快照
     if (__DEV__ && job.scopedSnapshot) {
-      const currentNode = genBaseListNode(job, jobContentKey)
+      const currentNode = createJobNode(job)
       const lastNode = job.scopedSnapshot.previous
       lastNode.next = currentNode
       currentNode.previous = lastNode
@@ -438,10 +451,10 @@ export function createJobControllers(job: Job, jobRoot: JobNode): JobControllers
 }
 
 // 任务编排与任务执行触发
-export function assignJob(job: Job) {
+export function assignJob(job: Job, registerMode: number) {
   if (!job.delay) {
     // 非延时任务
-    pushJob(job, jobListRoot)
+    pushJob(job, jobListRoot, registerMode)
     requestRunLoop()
   } else {
     // 延时任务 (备选任务的一种)
@@ -484,18 +497,37 @@ export function createMacrotask(
 
 // 创建任务节点
 export function createJobNode(job: Job, type?: string | number): JobNode {
-  return {
+  return ({
     type,
     ...genBaseListNode(job, 'job')
-  }
+  } as JobNode)
 }
 
 // 任务入队
-export function pushJob(job: Job, jobRoot: JobNode): boolean {
+export function pushJob(job: Job, jobRoot: JobNode, registerMode?: number): boolean {
   if (!isFunction(job)) {
     return false
   }
 
+  // 优先按照外部指定的注册模式进行任务编排
+  if (registerMode === RegisterModes.AFTER_BLASTING_POINT) {
+    const next = currentJobNode.next
+    const jobNode = createJobNode(job, jobRoot.type)
+    currentJobNode.next = jobNode
+    next && (next.previous = jobNode)
+    jobNode.previous = currentJobNode
+    jobNode.next = next
+
+    // 为保证注册任务的过期时间符合任务队列中的排序规则，因此将该任务
+    // 的过期时间设置为与前一任务相同
+    jobNode.job.expirationTime = currentJobNode?.job.expirationTime
+    return true
+  }
+
+  // 按照 scheduler 默认编排模式进行任务编排
+  // TODO 需要调整为从队列尾部向前遍历进行任务插入，因为相同优先级的任务一定是
+  // 后注册的靠近队尾，尾部向前遍历在大部分 case 下都能用最少的遍历次数找到
+  // 任务的目标插入位置
   const sortFlag =
     jobRoot.type === JobListTypes.JOB_LIST ?
       job.expirationTime:

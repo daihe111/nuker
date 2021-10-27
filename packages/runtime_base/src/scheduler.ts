@@ -5,7 +5,9 @@ import {
   EMPTY_OBJ,
   deleteProperty,
   hasOwn,
-  genBaseListNode
+  genBaseListNode,
+  createEmptyObject,
+  extend
 } from "../../share/src"
 
 export interface Job<T = any> {
@@ -110,14 +112,18 @@ let currentJobNode: JobNode
 // 任务队列使用链表的原因: 插入任务只需要查找和 1 次插入的开销，
 // 如果使用数组这种连续存储结构，需要查找和移动元素的开销
 // 执行队列
-const jobListRoot: JobNode = {
-  isRoot: true,
-  ...createJobNode(null, JobListTypes.JOB_LIST)
-}
+const jobListRoot: JobNode = initJobList(null, JobListTypes.JOB_LIST)
 // 备选任务执行队列
-const backupListRoot: JobNode = {
-  isRoot: true,
-  ...createJobNode(null, JobListTypes.BACKUP_LIST)
+const backupListRoot: JobNode = initJobList(null, JobListTypes.BACKUP_LIST)
+
+// 初始化任务队列
+function initJobList(job: Job, type: number): JobNode {
+  const jobRoot: JobNode = {
+    isRoot: true,
+    ...createJobNode(null, type)
+  }
+  jobRoot.previous = jobRoot.next = jobRoot
+  return jobRoot
 }
 
 export function genCurrentTime(): number {
@@ -496,11 +502,22 @@ export function createMacrotask(
 }
 
 // 创建任务节点
-export function createJobNode(job: Job, type?: string | number): JobNode {
-  return ({
-    type,
-    ...genBaseListNode(job, 'job')
-  } as JobNode)
+export function createJobNode(
+  job: Job,
+  type?: string | number,
+  previous?: JobNode,
+  next?: JobNode
+): JobNode {
+  const jobNode = createEmptyObject()
+  jobNode.type = type
+  return extend(
+    jobNode,
+    genBaseListNode(job, jobContentKey, previous, next)
+  )
+}
+
+export function isRoot(jobNode: JobNode): boolean {
+  return Boolean(jobNode.isRoot)
 }
 
 // 任务入队
@@ -524,30 +541,29 @@ export function pushJob(job: Job, jobRoot: JobNode, registerMode?: number): bool
     return true
   }
 
-  // 按照 scheduler 默认编排模式进行任务编排
-  // TODO 需要调整为从队列尾部向前遍历进行任务插入，因为相同优先级的任务一定是
+  // 按照 scheduler 默认编排策略进行任务编排
+  // 从队列尾部向前遍历进行任务插入，因为相同优先级的任务一定是
   // 后注册的靠近队尾，尾部向前遍历在大部分 case 下都能用最少的遍历次数找到
   // 任务的目标插入位置
   const sortFlag =
     jobRoot.type === JobListTypes.JOB_LIST ?
       job.expirationTime:
       job.startTime
-  let currentNode = jobRoot
-  while (currentNode !== null) {
+  let currentNode = jobRoot.previous
+  while (currentNode !== null && !isRoot(currentNode)) {
     const currentJob = currentNode.job
     const currentSortFlag = 
       currentNode.type === JobListTypes.JOB_LIST ?
         currentJob.expirationTime :
         currentJob.startTime
-    if (sortFlag <= currentSortFlag) {
-      const preCHIP = currentNode.previous
-      const newNode = preCHIP.next = createJobNode(job, jobRoot.type)
-      newNode.previous = preCHIP
-      newNode.next = currentNode
-      currentNode.previous = newNode
+    if (sortFlag >= currentSortFlag) {
+      const nextChip = currentNode.next
+      const node: JobNode = currentNode.next = nextChip.previous = createJobNode(job, jobRoot.type)
+      node.previous = currentNode
+      node.next = nextChip
       return true
     }
-    currentNode = currentNode.next
+    currentNode = currentNode.previous
   }
 
   return true

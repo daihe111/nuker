@@ -75,10 +75,15 @@ export const createEmptyObject = (): any => {
 export const hasChanged = (value: any, oldValue: any): boolean =>
   value !== oldValue && (value === value || oldValue === oldValue)
 
-export function genBaseListNode(content: any, contentKey: string | number | symbol): BaseListNode {
+export function genBaseListNode(
+  content: any,
+  contentKey: string | number | symbol,
+  previous?: any,
+  next?: any
+): BaseListNode {
   return {
     [contentKey]: content,
-    previous: null,
-    next: null
+    previous: previous || null,
+    next: next || null
   }
 }

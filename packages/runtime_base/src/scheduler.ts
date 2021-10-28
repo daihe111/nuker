@@ -42,7 +42,7 @@ export const enum JobListTypes {
 
 export const enum RegisterModes {
   DEFAULT_ORDER = 0, // 任务按照默认顺序注册，即按照过期时间进行排序注册
-  AFTER_BLASTING_POINT = 1 // 注册到正在执行任务的后方
+  AFTER_BLASTING_JOB = 1 // 注册到正在执行任务的后方
 }
 
 export const enum SchedulerFlags {
@@ -80,11 +80,13 @@ export interface JobControllers {
   cancel?: Function
 }
 
+// 过期任务处理策略
 export const enum ExpireStrategies {
-  DEFAULT = 0, // 过期任务按照过期时间排序插入执行队列
-  REBIRTH = 1, // 过期任务需要重生，作为新的任务插入执行队列
-  IDLE = 2, // 执行队列空闲时批量执行过期任务、剩余备选任务
-  INVALID = 3 // 过期任务作为垃圾任务被抛弃
+  DEFAULT = 0, // 过期任务不移出执行队列，保持正常执行
+  REUSE = 1, // 过期任务在不同的任务执行 loop 中可复用，按照过期时间排序可再次插入执行队列
+  REBIRTH = 2, // 过期任务需要重生，作为新的任务插入执行队列
+  IDLE = 3, // 执行队列空闲时批量执行过期任务、剩余备选任务
+  INVALID = 4 // 过期任务作为垃圾任务被抛弃
 }
 
 export const enum MacrotaskTypes {
@@ -195,7 +197,7 @@ export function registerJob(
   job.delay = job.delay || delay
   job.options = job.options || options
   job.controller = createJobControllers(job, jobListRoot)
-  if (registerMode !== RegisterModes.AFTER_BLASTING_POINT) {
+  if (registerMode !== RegisterModes.AFTER_BLASTING_JOB) {
     job.expirationTime = job.startTime + job.timeout
   }
 
@@ -239,30 +241,7 @@ export function flushJobs(jobRoot: JobNode): boolean {
       return false
     }
 
-    // 任务过期了，需要将过期任务从执行队列中转移到备选队列，
-    // 然后等到当前 loop 结束后再从备选队列中进行任务调度
-    const currentJob = currentJobNode.job
-    const isExpired = currentJob.expirationTime < genCurrentTime()
-    if (isExpired && !currentJob.isExpired) {
-      // 过期任务首次被标记过期，会将其移动到备选任务队列，
-      // 当该过期任务在后续的 loop 中被再次添加到执行队列
-      // 中时，该任务将会优先执行，而不会被再次转移到备选任务队列
-      popJob(jobListRoot)
-      currentJob.isExpired = true
-      pushJob(currentJob, backupListRoot)
-      currentJobNode = head(jobListRoot)
-      continue
-    }
-
-    // 任务如果返回子任务，说明该任务未执行完毕，后面还会
-    // 继续执行，因此当前任务节点不出队，将子任务替换到当前
-    // 任务节点上
-    const childJob = invokeJob(currentJobNode)
-    if (childJob === null) {
-      // 当前任务执行完毕，移出任务队列
-      popJob(jobRoot)
-    }
-    currentJobNode = head(jobRoot)
+    currentJobNode = handleJob(currentJobNode, jobRoot)
   }
 
   // 当前 loop 结束
@@ -340,9 +319,6 @@ export function fetchPriorJobs(): void {
             popJob(backupListRoot)
             pushJob(job, jobListRoot)
             break
-          case ExpireStrategies.INVALID:
-            popJob(backupListRoot)
-            break
           default:
             popJob(backupListRoot)
             pushJob(job, jobListRoot)
@@ -357,6 +333,51 @@ export function fetchPriorJobs(): void {
     }
     currentNode = head(backupListRoot)
   }
+}
+
+// 处理任务节点
+export function handleJob(jobNode: JobNode, jobRoot: JobNode): JobNode {
+  // 任务过期了，需要将过期任务从执行队列中转移到备选队列，
+  // 然后等到当前 loop 结束后再从备选队列中进行任务调度
+  const job = jobNode.job
+  const isExpired = job.expirationTime < genCurrentTime()
+  if (!isExpired) {
+    // 未过期任务处理
+    // 任务如果返回子任务，说明该任务未执行完毕，后面还会
+    // 继续执行，因此当前任务节点不出队，将子任务替换到当前
+    // 任务节点上
+    const childJob: Job = invokeJob(jobNode)
+    if (childJob === null) {
+      // 当前任务执行完毕，移出任务队列
+      popJob(jobRoot)
+    }
+  } else {
+    // 过期任务处理
+    switch (job.options?.expireStrategy) {
+      case ExpireStrategies.DEFAULT:
+        const childJob: Job = invokeJob(jobNode, isExpired)
+        if (childJob === null) {
+          popJob(jobRoot)
+        }
+        break
+      case ExpireStrategies.INVALID:
+        // 过期任务被视为无效任务，直接从执行队列移除
+        popJob(jobRoot)
+        break
+      default:
+        // 过期任务首次被标记过期，会将其移动到备选任务队列，
+        // 当该过期任务在后续的 loop 中被再次添加到执行队列
+        // 中时，该任务将会优先执行，而不会被再次转移到备选任务队列
+        if (isExpired && !job.isExpired) {
+          popJob(jobListRoot)
+          job.isExpired = true
+          pushJob(job, backupListRoot)
+        }
+        break
+    }
+  }
+
+  return head(jobRoot)
 }
 
 // 重生任务
@@ -388,10 +409,10 @@ export function shouldYield() {
 
 // 执行单个任务，返回有效子任务，说明当前任务未执行完，任务不出队；
 // 否则表示该任务已执行完毕，需要做出队操作
-export function invokeJob(jobNode: JobNode): Job | null {
+export function invokeJob(jobNode: JobNode, ...jobArgs: any[]): Job | null {
   const job = jobNode.job
   if (isFunction(job)) {
-    const childJob: Job | void = job(job.controller)
+    const childJob: Job | void = job(job.controller, ...jobArgs)
 
     // 将当前已执行完的子任务添加进快照
     if (__DEV__ && job.scopedSnapshot) {
@@ -520,14 +541,14 @@ export function isRoot(jobNode: JobNode): boolean {
   return Boolean(jobNode.isRoot)
 }
 
-// 任务入队
+// 任务入队，构建最小堆任务队列
 export function pushJob(job: Job, jobRoot: JobNode, registerMode?: number): boolean {
   if (!isFunction(job)) {
     return false
   }
 
   // 优先按照外部指定的注册模式进行任务编排
-  if (registerMode === RegisterModes.AFTER_BLASTING_POINT) {
+  if (registerMode === RegisterModes.AFTER_BLASTING_JOB) {
     const next = currentJobNode.next
     const jobNode = createJobNode(job, jobRoot.type)
     currentJobNode.next = jobNode

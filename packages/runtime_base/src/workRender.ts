@@ -468,7 +468,7 @@ export function performReconcileWork(oldChip: Chip, newChip: Chip, chipRoot: Chi
 export function registerOngoingReconcileWork(
   chipRoot: ChipRoot,
   chip: Chip,
-  registerMode: number = RegisterModes.AFTER_BLASTING_POINT
+  registerMode: number = RegisterModes.AFTER_BLASTING_JOB
 ): void {
   registerJob(() => {
     const next: Chip = reconcile(chip)

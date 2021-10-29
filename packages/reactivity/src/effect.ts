@@ -12,11 +12,13 @@ export interface EffectOptions {
 export interface Effect<T = any> extends EffectOptions, Job<T> {
   (): T
   isEffect: boolean
+  effectType?: number // 标记 effect 的类型，用于外部根据该类型做统计分析
   id?: number | string
   isActive: boolean
   stores: Set<Set<Effect>>
   collector: () => T
   dispatcher: (result: T) => unknown
+  setType: (type: number) => void
 }
 
 export const enum CollectingFlags {
@@ -59,6 +61,11 @@ export function effect<T = any>(
     effect()
   }
   return effect
+}
+
+// 为 effect 设置类型标记
+function setType(type: number): void {
+  (this as Effect).effectType = type
 }
 
 export function createEffect<T = any>(
@@ -107,6 +114,7 @@ export function createEffect<T = any>(
   effect.onDispatched = options.onDispatched
   effect.isActive = true
   effect.id = `__n_Effect_${id++}`
+  effect.setType = setType
   return effect
 }
 

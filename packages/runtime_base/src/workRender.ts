@@ -59,9 +59,10 @@ export interface RenderPayloadNode {
   next: RenderPayloadNode | null
 }
 
+// 框架渲染模式
 export const enum RenderModes {
-  SYNCHRONOUS = 0,
-  CONCURRENT = 1
+  SYNCHRONOUS = 0, // 同步渲染模式
+  CONCURRENT = 1 // 异步并发渲染模式
 }
 
 export const enum RenderUpdateTypes {
@@ -85,6 +86,7 @@ let ongoingChip: ChipUnit = null
 let currentRenderingInstance: ComponentInstance = null
 // 当前正在生成的 RenderPayloadNode
 let currentRenderPayload: RenderPayloadNode
+let currentRenderMode: number
 
 // update types: 
 // unstable dom (if-structure, for-structure)
@@ -106,6 +108,12 @@ let currentRenderPayload: RenderPayloadNode
 
 // 首次渲染：有向图 chip 节点遍历，产生的任务：渲染准备、update payload
 // 更新：渲染信息更新 (instance, data source...)、update payload (保证由子到父倒序执行，离屏渲染)
+
+// 更新当前渲染模式标记位
+export function refreshRenderMode(renderMode: number): number {
+  currentRenderMode = renderMode
+  return renderMode
+}
 
 // 同步执行任务循环
 export function workLoopSync(chipRoot: ChipRoot, chip: Chip) {

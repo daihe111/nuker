@@ -87,6 +87,7 @@ let currentRenderingInstance: ComponentInstance = null
 // 当前正在生成的 RenderPayloadNode
 let currentRenderPayload: RenderPayloadNode
 let currentRenderMode: number
+const renderModeStack: number[] = []
 
 // update types: 
 // unstable dom (if-structure, for-structure)
@@ -110,9 +111,17 @@ let currentRenderMode: number
 // 更新：渲染信息更新 (instance, data source...)、update payload (保证由子到父倒序执行，离屏渲染)
 
 // 更新当前渲染模式标记位
-export function refreshRenderMode(renderMode: number): number {
+export function pushRenderMode(renderMode: number): number {
+  renderModeStack.push(renderMode)
   currentRenderMode = renderMode
   return renderMode
+}
+
+// 废弃当前渲染模式标记位，并恢复到上一个渲染模式标记位
+export function popRenderMode(): number {
+  renderModeStack.pop()
+  currentRenderMode = renderModeStack[renderModeStack.length - 1]
+  return currentRenderMode
 }
 
 // 同步执行任务循环

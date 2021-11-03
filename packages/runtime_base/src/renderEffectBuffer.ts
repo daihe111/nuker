@@ -16,14 +16,14 @@ export interface BufferNode {
 
 // 渲染 effect 类型
 export const enum RenderEffectTypes {
-  PATCH_IMMEDIATELY = 0,
-  NEED_RECONCILE = 1
+  CAN_PATCH_IMMEDIATELY = 0, // 可立即渲染到实际的 dom 视图上
+  NEED_RECONCILE = 1 // 渲染任务需要进行 reconcile 并接入调度系统
 }
 
 // 任务缓冲区
 let buffer: BufferNode = null
-let isPending: boolean = false
-let isRunning: boolean = false
+let isPending: boolean = false // buffer 是否处于准备态
+let isRunning: boolean = false // buffer 是否处于执行态
 
 export function pushRenderEffectToBuffer(effect: Effect): void {
   pushBuffer(effect)
@@ -61,6 +61,9 @@ function head(root: BufferNode): BufferNode {
 // 对缓冲区的 render effect 进行分析，分析出本次 event loop 的渲染
 // 模式，并根据渲染模式进行 render effect 的派发
 export function flushBuffer(buffer: BufferNode): void {
+  isPending = false
+  isRunning = true
+
   // 1. 遍历 buffer 中所有 effect，根据所有 effect 的类型
   // 分析出本轮 event loop 采用哪种模式进行渲染更新
   let currentNode: BufferNode = buffer
@@ -93,6 +96,10 @@ export function flushBuffer(buffer: BufferNode): void {
     }
   }
   // TODO 考虑下是否等当前 buffer 全部执行完毕后一次性清空 buffer
+
+  if (buffer === null) {
+    isRunning = false
+  }
 }
 
 export function createBufferNode(effect: Effect): BufferNode {

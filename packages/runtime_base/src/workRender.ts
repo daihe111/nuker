@@ -18,10 +18,11 @@ import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, cre
 import { registerJob, Job, RegisterModes } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
-import { effect, disableCollecting, enableCollecting } from "../../reactivity/src/effect";
+import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
+import { pushRenderEffectToBuffer, RenderEffectTypes } from "./renderEffectBuffer";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -308,10 +309,11 @@ export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): vo
     return genRenderPayloads(chip, chipRoot, newData)
   }, {
     collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
-    scheduler: (job: Job) => {
-      // 将渲染更新任务注册到调度系统中
-      registerJob(job)
-    }
+    scheduler: (job: Effect) => {
+      // 将渲染更新任务推入渲染任务缓冲区
+      pushRenderEffectToBuffer(job)
+    },
+    effectType: RenderEffectTypes.NEED_RECONCILE
   })
 
   // TODO 虚拟容器节点 props 也需要建立响应式关系
@@ -345,21 +347,21 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
     const { isDynamic, value } = (props[propName] as ChipPropNode)
     if (isDynamic) {
       // 针对当前 chip 节点的动态属性创建对应的渲染 effect
-      const isStable: boolean = chipRoot.isStable
       effect<DynamicRenderData>(() => {
         // collector: 触发当前注册 effect 的收集行为
         return { props: { [propName]: value.value } }
       }, (newData: DynamicRenderData) => {
         // dispatcher: 响应式数据更新后触发
-        return isStable ?
+        return currentRenderMode === RenderModes.SYNCHRONOUS ?
           commitProps(chip.elm, newData.props) :
           genRenderPayloads(chip, chipRoot, newData)
       }, {
         collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
-        scheduler: (job: Job) => {
-          // 将渲染更新任务注册到调度系统中
-          registerJob(job)
-        }
+        scheduler: !chipRoot.isStable && ((job: Effect) => {
+          // 将当前 effect 推入渲染任务缓冲区
+          pushRenderEffectToBuffer(job)
+        }),
+        effectType: RenderEffectTypes.CAN_PATCH_IMMEDIATELY
       })
 
       // 将创建的 effect 存储至当前节点对应 chip context

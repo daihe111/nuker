@@ -3,6 +3,7 @@ import { Job } from "../../runtime_base/src/scheduler"
 export interface EffectOptions {
   lazy?: boolean // 是否开启惰性模式
   collectOnly?: boolean // 是否仅触发 effect 收集
+  effectType?: number
   scheduler?: (task: unknown) => void
   onCollected?: () => void
   onDispatched?: () => void
@@ -18,7 +19,6 @@ export interface Effect<T = any> extends EffectOptions, Job<T> {
   stores: Set<Set<Effect>>
   collector: () => T
   dispatcher: (result: T) => unknown
-  setType: (type: number) => void
 }
 
 export const enum CollectingFlags {
@@ -63,11 +63,6 @@ export function effect<T = any>(
   return effect
 }
 
-// 为 effect 设置类型标记
-function setType(type: number): void {
-  (this as Effect).effectType = type
-}
-
 export function createEffect<T = any>(
   collector: () => T,
   dispatcher: (data: T) => T,
@@ -109,12 +104,12 @@ export function createEffect<T = any>(
   effect.dispatcher = dispatcher
   effect.stores = new Set()
   effect.lazy = options.lazy
+  effect.effectType = options.effectType
   effect.scheduler = options.scheduler
   effect.onCollected = options.onCollected
   effect.onDispatched = options.onDispatched
   effect.isActive = true
   effect.id = `__n_Effect_${id++}`
-  effect.setType = setType
   return effect
 }
 

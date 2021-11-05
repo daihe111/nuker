@@ -5,9 +5,10 @@
  * 渲染更新的执行效率
  */
 
-import { Effect } from "../../reactivity/src/effect";
+import { Effect, injectIntoEffect } from "../../reactivity/src/effect";
 import { RenderModes, pushRenderMode } from "./workRender";
-import { registerJob } from "./scheduler";
+import { registerJob, JobPriorities } from "./scheduler";
+import { performCommitWork } from "./commit";
 
 export interface BufferNode {
   effect: Effect
@@ -16,8 +17,8 @@ export interface BufferNode {
 
 // 渲染 effect 类型
 export const enum RenderEffectTypes {
-  CAN_PATCH_IMMEDIATELY = 0, // 可立即渲染到实际的 dom 视图上
-  NEED_RECONCILE = 1 // 渲染任务需要进行 reconcile 并接入调度系统
+  CAN_DISPATCH_IMMEDIATELY = 0, // 可立即渲染到实际的 dom 视图上
+  NEED_SCHEDULE = 1 // 渲染任务需要进行 reconcile 并接入调度系统
 }
 
 // 任务缓冲区
@@ -69,7 +70,7 @@ export function flushBuffer(buffer: BufferNode): void {
   let currentNode: BufferNode = buffer
   let renderMode: number = RenderModes.SYNCHRONOUS
   while (currentNode !== null) {
-    if (currentNode.effect?.effectType === RenderEffectTypes.NEED_RECONCILE) {
+    if (currentNode.effect?.effectType === RenderEffectTypes.NEED_SCHEDULE) {
       renderMode = RenderModes.CONCURRENT
       break
     }
@@ -77,23 +78,21 @@ export function flushBuffer(buffer: BufferNode): void {
   }
 
   // 更新渲染模式标记
-  pushRenderMode(renderMode)
+  // pushRenderMode(renderMode)
 
   // 2. buffer 中的 effect 派发或作为任务注册进 scheduler
   // 以接受调度，处理完成的 effect 将移出缓冲区
+  const propKeys: string[] = ['renderMode', 'endInLoop']
   currentNode = buffer
-  if (renderMode === RenderModes.CONCURRENT) {
-    // concurrent 异步渲染模式
-    while (currentNode !== null) {
-      registerJob(currentNode.effect)
-      currentNode = head(popBuffer())
+  while (currentNode !== null) {
+    // 为 effect 注入渲染模式信息
+    injectIntoEffect(currentNode.effect, propKeys[0], renderMode)
+    if (currentNode.next === null) {
+      // 如果是 buffer 中最后一个 effect 节点，将其标记为当前 event loop
+      // 最后一个任务
+      injectIntoEffect(currentNode.effect, propKeys[1], true)
     }
-  } else {
-    // 同步渲染模式
-    while (currentNode !== null) {
-      currentNode.effect()
-      currentNode = head(popBuffer())
-    }
+    currentNode = head(popBuffer())
   }
   // TODO 考虑下是否等当前 buffer 全部执行完毕后一次性清空 buffer
 

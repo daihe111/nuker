@@ -24,6 +24,7 @@ export interface Job<T = any> {
   // 当前任务节点的子任务快照，测试环境可为祖先任务创建
   // 子任务的快照用于调度分析
   scopedSnapshot?: JobNode | null
+  hooks?: Record<string, Function>
   options?: JobOptions
 }
 
@@ -33,6 +34,7 @@ export interface JobNode {
   next: JobNode
   isRoot?: boolean
   type?: number | string
+  hooks?: Record<string, Function>
 }
 
 export const enum JobListTypes {
@@ -71,6 +73,7 @@ export interface JobOptions {
   isDeepFirst?: boolean // 任务执行是否遵循深度优先规则
   expireStrategy?: number // 过期任务的处理策略
   openSnapshot?: boolean // 是否开启任务单元执行快照
+  hooks?: Record<string, Function>
 }
 
 // 任务控制器
@@ -197,6 +200,7 @@ export function registerJob(
   job.delay = job.delay || delay
   job.options = job.options || options
   job.controller = createJobControllers(job, jobListRoot)
+  job.hooks = options.hooks
   if (registerMode !== RegisterModes.AFTER_BLASTING_JOB) {
     job.expirationTime = job.startTime + job.timeout
   }
@@ -350,6 +354,10 @@ export function handleJob(jobNode: JobNode, jobRoot: JobNode): JobNode {
     if (childJob === null) {
       // 当前任务执行完毕，移出任务队列
       popJob(jobRoot)
+      if (isFunction(jobNode.hooks?.onCompleted)) {
+        // 当前任务节点全部处理完毕，执行对应的 hook
+        jobNode.hooks?.onCompleted()
+      }
     }
   } else {
     // 过期任务处理
@@ -358,6 +366,10 @@ export function handleJob(jobNode: JobNode, jobRoot: JobNode): JobNode {
         const childJob: Job = invokeJob(jobNode, isExpired)
         if (childJob === null) {
           popJob(jobRoot)
+          if (isFunction(jobNode.hooks?.onCompleted)) {
+            // 当前任务节点全部处理完毕，执行对应的 hook
+            jobNode.hooks?.onCompleted()
+          }
         }
         break
       case ExpireStrategies.INVALID:
@@ -531,6 +543,7 @@ export function createJobNode(
 ): JobNode {
   const jobNode = createEmptyObject()
   jobNode.type = type
+  jobNode.hooks = job.hooks
   return extend(
     jobNode,
     genBaseListNode(job, jobContentKey, previous, next)

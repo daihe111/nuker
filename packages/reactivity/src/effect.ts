@@ -1,4 +1,5 @@
 import { Job } from "../../runtime_base/src/scheduler"
+import { isFunction } from "../../share/src"
 
 export interface EffectOptions {
   lazy?: boolean // 是否开启惰性模式
@@ -17,8 +18,9 @@ export interface Effect<T = any> extends EffectOptions, Job<T> {
   id?: number | string
   isActive: boolean
   stores: Set<Set<Effect>>
-  collector: () => T
-  dispatcher: (result: T) => unknown
+  collector: (ctx: Effect) => T
+  dispatcher: (result: T, ctx: Effect) => unknown
+  [key: string]: any
 }
 
 export const enum CollectingFlags {
@@ -52,8 +54,8 @@ let collectingFlag = CollectingFlags.COLLECTING_OPENED
 
 // 收集时需要做什么，派发时需要做什么
 export function effect<T = any>(
-  collector: () => T, // 传入 collector 旨在保证拦截器收集到正确的 effect，防止收集到与数据不对应的 effect
-  dispatcher: (data: T) => unknown,
+  collector: (ctx: Effect) => T, // 传入 collector 旨在保证拦截器收集到正确的 effect，防止收集到与数据不对应的 effect
+  dispatcher: (data: T, ctx: Effect) => unknown,
   options: EffectOptions = {}
 ): Effect {
   const effect: Effect = createEffect(collector, dispatcher, options)
@@ -63,9 +65,15 @@ export function effect<T = any>(
   return effect
 }
 
+// 向目标 effect 注入信息
+export function injectIntoEffect(effect: Effect, key: string, value: any): Effect {
+  effect[key] = value
+  return effect
+}
+
 export function createEffect<T = any>(
-  collector: () => T,
-  dispatcher: (data: T) => T,
+  collector: (ctx: Effect) => T,
+  dispatcher: (data: T, ctx: Effect) => T,
   options: EffectOptions = {}
 ): Effect {
   const runner = (effect: Effect): T => {
@@ -73,7 +81,7 @@ export function createEffect<T = any>(
     currentEffect = effect
     effectStack.push(currentEffect)
     // 只取值，触发 getter
-    const result = collector()
+    const result = collector(effect)
     effectStack.pop()
     currentEffect = effectStack[effectStack.length - 1]
     // 不能取值，防止取值时 trap 收集到错误的 effect，仅触发取值外的其他副作用
@@ -81,7 +89,7 @@ export function createEffect<T = any>(
     
     if (!options.collectOnly) {
       // 如果配置了仅做 effect 收集，将不触发 dispatcher 中逻辑的执行
-      dispatcher(result)
+      dispatcher(result, effect)
     }
 
     enableCollecting()
@@ -90,10 +98,6 @@ export function createEffect<T = any>(
   }
   const effect: Effect = (): T => {
     if (!effect.isActive) {
-      return
-    }
-    if (options.scheduler) {
-      options.scheduler(runner)
       return
     }
     return runner(effect)
@@ -150,7 +154,7 @@ export function dispatch(
   effects.forEach((effect) => {
     // 避免在 collector 中出现当前 effect 无限触发的情况
     if (effect !== currentEffect) {
-      effect()
+      isFunction(effect.scheduler) ? effect.scheduler(effect) : effect()
       effect.onDispatched && effect.onDispatched()
     }
   })

@@ -15,7 +15,7 @@ import {
   ChipProps
 } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, createEmptyObject } from "../../share/src";
-import { registerJob, Job, RegisterModes } from "./scheduler";
+import { registerJob, Job, RegisterModes, JobPriorities } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
@@ -76,11 +76,6 @@ export const enum RenderUpdateTypes {
   INVALID = -1
 }
 
-// fragment 节点对应的子节点属性
-const fragmentChildrenPropKey = Symbol()
-const dynamicChipKey = Symbol()
-// 包含动态内容的 chip 链表
-const dynamicChipList = genBaseListNode(null, dynamicChipKey)
 // 正在进行中的 chip 节点
 let ongoingChip: ChipUnit = null
 // 当前正在执行渲染工作的组件 instance
@@ -138,13 +133,20 @@ export function workLoopConcurrent(chipRoot: ChipRoot, chip: Chip) {
   registerOngoingChipWork(chipRoot, chip)
 }
 
-export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip) {
-  ongoingChip = chip
-  registerJob(() => {
+export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip): void {
+  function chipPerformingJob(chipRoot: ChipRoot, chip: Chip): Function {
     // get next chip to working
     const next = performChipWork(chipRoot, chip, RenderModes.CONCURRENT)
-    registerOngoingChipWork(chipRoot, next)
-  })
+    if (next && next[ChipFlags.IS_CHIP]) {
+      return () => {
+        return chipPerformingJob(chipRoot, next)
+      }
+    } else {
+      return null
+    }
+  }
+
+  registerJob(chipPerformingJob.bind(null, chipRoot, chip))
 }
 
 // chip unit work 执行
@@ -302,18 +304,18 @@ export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): vo
     // TODO 需要确认是否每次触发更新都更新 chip.children
     chip.children = children
     return { children }
-  }, (newData: DynamicRenderData) => {
+  }, (newData: DynamicRenderData, ctx: Effect) => {
     // dispatcher: 响应式数据更新后触发
     // 虚拟容器节点的内部结构不稳定，因此需要 diff 来产生 render payloads，
     // 因此不能走同步渲染模式，而是走 concurrent 渲染模式
-    return genRenderPayloads(chip, chipRoot, newData)
+    return genRenderPayloads(chip, chipRoot, newData, ctx.endInLoop)
   }, {
     collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
     scheduler: (job: Effect) => {
       // 将渲染更新任务推入渲染任务缓冲区
       pushRenderEffectToBuffer(job)
     },
-    effectType: RenderEffectTypes.NEED_RECONCILE
+    effectType: RenderEffectTypes.NEED_SCHEDULE
   })
 
   // TODO 虚拟容器节点 props 也需要建立响应式关系
@@ -350,9 +352,9 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
       effect<DynamicRenderData>(() => {
         // collector: 触发当前注册 effect 的收集行为
         return { props: { [propName]: value.value } }
-      }, (newData: DynamicRenderData) => {
+      }, (newData: DynamicRenderData, ctx: Effect) => {
         // dispatcher: 响应式数据更新后触发
-        return currentRenderMode === RenderModes.SYNCHRONOUS ?
+        return ctx.renderMode === RenderModes.SYNCHRONOUS ?
           commitProps(chip.elm, newData.props) :
           genRenderPayloads(chip, chipRoot, newData)
       }, {
@@ -361,7 +363,7 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
           // 将当前 effect 推入渲染任务缓冲区
           pushRenderEffectToBuffer(job)
         }),
-        effectType: RenderEffectTypes.CAN_PATCH_IMMEDIATELY
+        effectType: RenderEffectTypes.CAN_DISPATCH_IMMEDIATELY
       })
 
       // 将创建的 effect 存储至当前节点对应 chip context
@@ -445,7 +447,12 @@ export function createRenderPayloadNode(
 }
 
 // 生成更新描述信息
-export function genRenderPayloads(chip: Chip, chipRoot: ChipRoot, renderData: DynamicRenderData): RenderPayloadNode {
+export function genRenderPayloads(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  renderData: DynamicRenderData,
+  needHooks?: boolean
+): void {
   // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 chip
   // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
@@ -455,54 +462,79 @@ export function genRenderPayloads(chip: Chip, chipRoot: ChipRoot, renderData: Dy
   if (children) {
     // 处理动态子节点，生成动态子节点的 RenderPayloadNode
     const newChip = cloneChip(chip, props, children)
-    // trigger diff
-    performReconcileWork(chip, newChip, chipRoot)
+    // trigger reconcile diff
+    performReconcileWork(chip, newChip, chipRoot, needHooks)
     type = RenderUpdateTypes.PATCH_CHILDREN
   }
 
-  const payload = createRenderPayloadNode(
-    elm,
-    chip.parent.elm,
+  registerJob(
+    () => {
+      const payload = createRenderPayloadNode(
+        elm,
+        chip.parent.elm,
+        null,
+        type,
+        chip,
+        (tag as string),
+        props
+      )
+      currentRenderPayload = currentRenderPayload.next = payload
+    },
+    JobPriorities.NORMAL,
     null,
-    type,
-    chip,
-    (tag as string),
-    props
+    0,
+    needHooks && {
+      hooks: {
+        onCompleted: performCommitWork.bind(null, chipRoot)
+      }
+    }
   )
-  currentRenderPayload = currentRenderPayload.next = payload
-  return payload
 }
 
 // diff 执行入口函数
-export function performReconcileWork(oldChip: Chip, newChip: Chip, chipRoot: ChipRoot): void {
+export function performReconcileWork(
+  oldChip: Chip,
+  newChip: Chip,
+  chipRoot: ChipRoot,
+  needHooks?: boolean
+): void {
   try {
     newChip.wormhole = oldChip
-    registerOngoingReconcileWork(chipRoot, newChip)
+    registerOngoingReconcileWork(newChip, chipRoot, needHooks)
   } catch (e) {
 
   }
 }
 
-// 将单个成对节点的 reconcile 作为任务单元注册进调度系统
+// 将 chip 节点对的 reconcile 作为任务单元注册进调度系统，
+// 每个任务返回下一 chip 节点对做 reconcile 的子任务，以此类推
 export function registerOngoingReconcileWork(
-  chipRoot: ChipRoot,
   chip: Chip,
-  registerMode: number = RegisterModes.AFTER_BLASTING_JOB
+  chipRoot: ChipRoot,
+  needHooks: boolean
 ): void {
-  registerJob(() => {
+  function reconcileJob(chip: Chip): Function {
     const next: Chip = reconcile(chip)
-
     if (next && next[ChipFlags.IS_CHIP]) {
-      // 为下一组 reconcile 的节点注册任务
-      registerOngoingReconcileWork(chipRoot, next)
-    } else if (next === null) {
-      // 当前渲染周期内的所有 reconcile 任务全部执行完毕，注册 commit 任务
-      // commit 为单一同步任务，一旦开始执行便不可中断
-      registerJob(() => {
-        performCommitWork(chipRoot)
-      })
+      return () => {
+        return reconcileJob(next)
+      }
+    } else {
+      return null
     }
-  })
+  }
+
+  registerJob(
+    reconcileJob.bind(null, chip),
+    JobPriorities.NORMAL,
+    null,
+    0,
+    needHooks && {
+      hooks: {
+        onCompleted: performCommitWork.bind(null, chipRoot)
+      }
+    }
+  )
 }
 
 /**

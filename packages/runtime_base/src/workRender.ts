@@ -591,9 +591,14 @@ export function completeReconcile(chip: Chip, isSkipable: boolean = false): Chip
   ongoingChip = chip
   chip.phase = ChipPhases.COMPLETE
 
-  // 如果 chip 节点不跳过，则 diff 出更新描述 RenderPayload
+  // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
   if (!isSkipable) {
     reconcileToGenRenderPayload(chip)
+  }
+
+  // 根据收集的待删除子节点生成对应的 render payload
+  if (hasDeletions(chip)) {
+    genRenderPayloadsForDeletions(chip.deletions)
   }
 
   // 获取下一个需要处理的 chip
@@ -616,9 +621,23 @@ export function completeReconcile(chip: Chip, isSkipable: boolean = false): Chip
   }
 }
 
-// 建立 chip 子节点之间的映射关系
+// 建立 chip 子节点之间的映射关系，但不引入其他副作用，生成 render payload
+// 需要在独立的时机去做，避免任务单元变得 CPU-bound
 export function mapChipChildren(oldChildren: ChipChildren, newChildren: ChipChildren): void {
 
+}
+
+// 缓存要删除的 chip
+export function cacheDeletions(parent: Chip, deletion: Chip): void {
+  if (!isArray(parent.deletions)) {
+    parent.deletions = []
+  }
+
+  parent.deletions.push(deletion)
+}
+
+export function hasDeletions(chip: Chip): boolean {
+  return isArray(chip.deletions)
 }
 
 // 新旧 chip (仅 chip 节点本身) diff 生成更新描述
@@ -654,6 +673,21 @@ export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
   }
   
   return currentRenderPayload
+}
+
+// 根据缓存的待删除子节点生成对应的 render payload
+export function genRenderPayloadsForDeletions(deletions: Chip[]): void {
+  for (let i = 0; i < deletions.length; i++) {
+    const deletion = deletions[i]
+    const elm = deletion.elm
+    currentRenderPayload = currentRenderPayload.next = createRenderPayloadNode(
+      elm,
+      domOptions.parentNode(elm),
+      null,
+      RenderUpdateTypes.UNMOUNT,
+      deletion
+    )
+  }
 }
 
 /**

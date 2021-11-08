@@ -80,16 +80,18 @@ export function flushBuffer(buffer: BufferNode): void {
   // 更新渲染模式标记
   // pushRenderMode(renderMode)
 
-  // 2. buffer 中的 effect 派发或作为任务注册进 scheduler
-  // 以接受调度，处理完成的 effect 将移出缓冲区
+  // 2. buffer 中的 effect 派发，处理完成的 effect 将移出缓冲区
   const propKeys: string[] = ['renderMode', 'endInLoop']
   currentNode = buffer
   while (currentNode !== null) {
     // 为 effect 注入渲染模式信息
     injectIntoEffect(currentNode.effect, propKeys[0], renderMode)
-    if (currentNode.next === null) {
-      // 如果是 buffer 中最后一个 effect 节点，将其标记为当前 event loop
-      // 最后一个任务
+    if (
+      renderMode === RenderModes.CONCURRENT &&
+      currentNode.next === null
+    ) {
+      // 如果是 buffer 中最后一个 effect 节点且为 concurrent 渲染模式，
+      // 将其标记为当前 event loop 最后一个任务
       injectIntoEffect(currentNode.effect, propKeys[1], true)
     }
     currentNode = head(popBuffer())

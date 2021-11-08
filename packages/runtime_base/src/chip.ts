@@ -95,6 +95,7 @@ export interface Chip extends ChipCore {
   // 当前已转化为 chip 的 Chip child 索引，用于辅助 chip 树
   // 遍历过程中动态创建新的 chip
   currentChildIndex?: number
+  deletions?: Chip[] // 缓存当前 chip 下需要删除的一级子 chip
   // 存储节点对应的所有 effect，用于 chip 上下文销毁时对 effect 
   // 进行靶向移除
   effects?: ChipEffectUnit | null

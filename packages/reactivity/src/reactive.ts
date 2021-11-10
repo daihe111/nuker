@@ -53,6 +53,11 @@ export interface ReactiveOptions {
   isShallow?: boolean
 }
 
+export const enum ReactiveTypes {
+  ONLY_SELF = 0, // 仅自身为响应式数据
+  CHILD_OF_REACTIVE_SOURCE = 1 // 作为子响应式数据从属于其他响应式数据源
+}
+
 // target - ReactiveProxy Map
 export const proxyCache = new WeakMap<Target, any>()
 // ReactiveProxy - isActive Map

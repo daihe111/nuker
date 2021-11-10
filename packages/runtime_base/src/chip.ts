@@ -1,4 +1,4 @@
-import { ComponentInstance } from "./component"
+import { ComponentInstance, Component } from "./component"
 import { Effect } from "../../reactivity/src/effect"
 import {
   isReservedTag,
@@ -6,9 +6,9 @@ import {
 } from './domOptions';
 import { isObject, isArray, isString, isNumber } from '../../share/src';
 import { RenderPayloadNode, ChildrenRenderer } from "./workRender";
-import { VirtualInstance } from "./virtualChip";
+import { VirtualInstance, VirtualOptions } from "./virtualChip";
 
-export type ChipTag = | string | void
+export type ChipTag = | string | Component | VirtualOptions
 
 export interface ChipPropNode {
   isDynamic?: boolean

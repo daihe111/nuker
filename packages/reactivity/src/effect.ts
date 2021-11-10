@@ -5,6 +5,7 @@ export interface EffectOptions {
   lazy?: boolean // 是否开启惰性模式
   collectOnly?: boolean // 是否仅触发 effect 收集
   effectType?: number
+  whiteList?: string[] // 仅包含于白名单中的 key 才会触发 effect 收集操作
   scheduler?: (task: unknown) => void
   onCollected?: () => void
   onDispatched?: () => void

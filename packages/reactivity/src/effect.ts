@@ -1,12 +1,17 @@
 import { Job } from "../../runtime_base/src/scheduler"
 import { isFunction } from "../../share/src"
 
+export interface EffectWhiteListItem {
+  source: object
+  key: string | number | symbol
+}
+
 export interface EffectOptions {
   lazy?: boolean // 是否开启惰性模式
   collectOnly?: boolean // 是否仅触发 effect 收集
   effectType?: number
-  whiteList?: string[] // 仅包含于白名单中的 key 才会触发 effect 收集操作
-  scheduler?: (task: unknown) => void
+  whiteList?: Array<EffectWhiteListItem> // 仅包含于白名单中的 key 才会触发 effect 收集操作
+  scheduler?: (task: Effect) => void
   onCollected?: () => void
   onDispatched?: () => void
   onRunned?: () => void
@@ -110,6 +115,7 @@ export function createEffect<T = any>(
   effect.stores = new Set()
   effect.lazy = options.lazy
   effect.effectType = options.effectType
+  effect.whiteList = options.whiteList
   effect.scheduler = options.scheduler
   effect.onCollected = options.onCollected
   effect.onDispatched = options.onDispatched
@@ -134,7 +140,16 @@ export function collect(
   const targetMap: Map<typeof key, Set<Effect>> = store.get(target)
   targetMap.has(key) ? targetMap.get(key) : targetMap.set(key, new Set())
   const effects: Set<Effect> = targetMap.get(key)
-  if (currentEffect && !effects.has(currentEffect)) {
+  if (
+    (!currentEffect.whiteList ||
+    isInWhiteList(target, key, currentEffect.whiteList)) &&
+    currentEffect &&
+    !effects.has(currentEffect)
+  ) {
+    // effect 被收集的条件:
+    // 1. 数据源、属性 key 命中 effect 的收集白名单
+    // 2. 被收集 effect 本身有效
+    // 3. effect 未被收集当当前 source - key 对应的依赖仓库
     effects.add(currentEffect)
     currentEffect.stores.add(effects)
     currentEffect.onCollected && currentEffect.onCollected()
@@ -159,6 +174,24 @@ export function dispatch(
       effect.onDispatched && effect.onDispatched()
     }
   })
+}
+
+// 数据源、属性 key 是否命中白名单
+export function isInWhiteList(
+  source: object,
+  key: unknown,
+  whiteList: EffectWhiteListItem[]
+): boolean {
+  let ret = false
+  for (let i = 0; i < whiteList.length; i++) {
+    const { source: src, key: k } = whiteList[i]
+    if (source === src && key === k) {
+      ret = true
+      break
+    }
+  }
+
+  return ret
 }
 
 export function teardownEffect(effect: Effect) {

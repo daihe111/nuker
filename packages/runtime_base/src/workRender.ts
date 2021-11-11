@@ -351,13 +351,14 @@ var render
 
 export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): void {
   const {
-    source,
+    source, // 响应式母数据源
+    key: sourceKey,
     sourceFlag,
     render
   } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
 
   // 创建源数据一级子元素的渲染 effect 收集
-  function genEffectOfSon(source: object, key: string, render: Function): void {
+  function genEffectOfSon(source: object, key: string, render: Function): Chip {
     let lastChildren: Chip
     effect<DynamicRenderData>(() => {
       return { children: render(source[key]) }
@@ -367,8 +368,10 @@ export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): vo
       reconcile(children)
       lastChildren = children
     }, {
-      whiteList: [key]
+      whiteList: [{ source, key }]
     })
+
+    return lastChildren
   }
 
   if (sourceFlag === ReactiveTypes.ONLY_SELF) {
@@ -383,14 +386,16 @@ export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): vo
     // 片段，并对新旧 chip 片段进行 reconcile
     effect<DynamicRenderData>(() => {
       const children: Chip[] = []
-      let i = 0
-      for (const key in (source as object)) {
-        genEffectOfSon(source, key, render)
+      const src = source[sourceKey]
+      for (const key in (src as object)) {
+        children.push(genEffectOfSon(src, key, render))
       }
       return { children }
     }, (newData: DynamicRenderData, ctx: Effect) => {
       // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
       return genRenderPayloads(chip, chipRoot, newData, ctx.endInLoop)
+    }, {
+      whiteList: [{ source, key: sourceKey }]
     })
   }
 }

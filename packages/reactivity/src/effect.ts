@@ -3,7 +3,7 @@ import { isFunction } from "../../share/src"
 
 export interface EffectWhiteListItem {
   source: object
-  key: string | number | symbol
+  key: unknown
 }
 
 export interface EffectOptions {

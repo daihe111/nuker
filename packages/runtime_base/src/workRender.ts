@@ -349,44 +349,42 @@ var render
 //   // TODO 虚拟容器节点 props 也需要建立响应式关系
 // }
 
-export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): void {
+export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): void {
   const {
-    source, // 响应式母数据源
-    key: sourceKey,
-    sourceFlag,
+    source, // 响应式数据源
+    sourceKey, // 如果存在父级数据源，则当前 iterable chip 需要通过 sourceKey 访问循环源数据
     render
   } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
 
   // 创建源数据一级子元素的渲染 effect 收集
   function genEffectOfSon(source: object, key: string, render: Function): Chip {
+    let ret: Chip
     let lastChildren: Chip
     effect<DynamicRenderData>(() => {
-      return { children: render(source[key]) }
+      ret = render(source[key])
+      return { children: ret }
     }, (newData: DynamicRenderData) => {
       const children: Chip = (newData.children as Chip)
       children.wormhole = lastChildren
       reconcile(children)
       lastChildren = children
     }, {
-      whiteList: [{ source, key }]
+      whiteList: [{ source, key }],
+      collectOnly: true,
+      scheduler: pushRenderEffectToBuffer,
+      effectType: RenderEffectTypes.NEED_SCHEDULE
     })
 
-    return lastChildren
+    return ret
   }
 
-  if (sourceFlag === ReactiveTypes.ONLY_SELF) {
-    // 仅数据源本身为响应式数据，因此数据源自身无法被直接修改，仅
-    // 需要对子代数据进行依赖收集
-    for (const key in (source as object)) {
-      genEffectOfSon(source, key, render)
-    }
-  } else {
+  if (sourceKey) {
     // 数据源为从属于上级响应式数据源的响应式数据，因此该数据源可被
     // 完全改变 (引用级)，数据源引用改变后需要根据新的数据源生成 chip
     // 片段，并对新旧 chip 片段进行 reconcile
     effect<DynamicRenderData>(() => {
       const children: Chip[] = []
-      const src = source[sourceKey]
+      const src = source[sourceKey as any]
       for (const key in (src as object)) {
         children.push(genEffectOfSon(src, key, render))
       }
@@ -395,8 +393,17 @@ export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): vo
       // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
       return genRenderPayloads(chip, chipRoot, newData, ctx.endInLoop)
     }, {
-      whiteList: [{ source, key: sourceKey }]
+      whiteList: [{ source, key: sourceKey }],
+      collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
+      scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
+      effectType: RenderEffectTypes.NEED_SCHEDULE
     })
+  } else {
+    // 仅数据源本身为响应式数据，因此数据源自身无法被直接修改，仅
+    // 需要对子代数据进行依赖收集
+    for (const key in (source as object)) {
+      genEffectOfSon(source, key, render)
+    }
   }
 }
 

@@ -295,127 +295,9 @@ export function initRenderWorkForElement(chip: Chip) {
   chip.elm = domOptions.createElement(tag, isSVG, is)
 }
 
-// for-chip: 每个单元节点均对应一个单元渲染器 render，并且是深度收集
-// case 1: iterable source 直接全量被替换，重新执行 render 生成新的
-//   全新节点片段，并与旧的节点片段做 reconcile
-// case 2: iterable source 本身引用不变，对一级子元素做改变，只需要对
-//   一级元素改变的 key 对应的子 render 进行新节点生成，并对新旧节点对
-//   进行 reconcile
-// case 3: iterable source 本身引用不变，对一级以下元素做改变，此情况
-//   下发生值变化的数据所对应的 dom 结构一定是稳定的，无需特殊处理
-// for-chip 编译出的渲染器
-var source
-var render
-() => {
-  const ret = []
-  for (let i = 0; i < source.length; i++) {
-    effect(() => {
-      // 触发 effect 收集
-      return { children: render(source[i]) }
-    }, ({ children }) => {
-      // 一级元素变化时触发，对新生成的节点与旧节点做 reconcile
-      reconcile(oldChildren, children)
-    })
-  }
-}
-// if-chip: 数据变化时触发整个 render 重新执行
-// (src) => {
-//   return src.value === 1 ? <> : src.value === 2 ? <> : <>
-// }
 // 初始化虚拟容器类型节点的渲染工作
-// export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): void {
-//   const { source, render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-//   // 建立响应式系统与渲染 effect 之间的关系
-//   effect<DynamicRenderData>(() => {
-//     // collector: 触发当前注册 effect 的收集行为
-//     const children: ChipChildren = render(source)
-//     // TODO 需要确认是否每次触发更新都更新 chip.children
-//     chip.children = children
-//     return { children }
-//   }, (newData: DynamicRenderData, ctx: Effect) => {
-//     // dispatcher: 响应式数据更新后触发
-//     // 虚拟容器节点的内部结构不稳定，因此需要 diff 来产生 render payloads，
-//     // 因此不能走同步渲染模式，而是走 concurrent 渲染模式
-//     return genRenderPayloads(chip, chipRoot, newData, ctx.endInLoop)
-//   }, {
-//     collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
-//     scheduler: (job: Effect) => {
-//       // 将渲染更新任务推入渲染任务缓冲区
-//       pushRenderEffectToBuffer(job)
-//     },
-//     effectType: RenderEffectTypes.NEED_SCHEDULE
-//   })
-
-//   // TODO 虚拟容器节点 props 也需要建立响应式关系
-// }
-
-export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): void {
-  const {
-    source, // 响应式数据源
-    sourceKey, // 如果存在父级数据源，则当前 iterable chip 需要通过 sourceKey 访问循环源数据
-    render
-  } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-
-  // 创建源数据一级子元素的渲染 effect 收集
-  function genEffectOfSon(source: object, key: string, render: Function): Chip {
-    let ret: Chip
-    let lastChildren: Chip
-    effect<DynamicRenderData>(() => {
-      ret = render(source[key])
-      return { children: ret }
-    }, (newData: DynamicRenderData) => {
-      const children: Chip = (newData.children as Chip)
-      children.wormhole = lastChildren
-      reconcile(children)
-      lastChildren = children
-    }, {
-      whiteList: [{ source, key }],
-      collectOnly: true,
-      scheduler: pushRenderEffectToBuffer,
-      effectType: RenderEffectTypes.NEED_SCHEDULE
-    })
-
-    return ret
-  }
-
-  if (sourceKey) {
-    // 数据源为从属于上级响应式数据源的响应式数据，因此该数据源可被
-    // 完全改变 (引用级)，数据源引用改变后需要根据新的数据源生成 chip
-    // 片段，并对新旧 chip 片段进行 reconcile
-    effect<DynamicRenderData>(() => {
-      const children: Chip[] = []
-      const src = source[sourceKey as any]
-      for (const key in (src as object)) {
-        children.push(genEffectOfSon(src, key, render))
-      }
-      return { children }
-    }, (newData: DynamicRenderData, ctx: Effect) => {
-      // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
-      return genRenderPayloads(chip, chipRoot, newData, ctx.endInLoop)
-    }, {
-      whiteList: [{ source, key: sourceKey }],
-      collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
-      scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
-      effectType: RenderEffectTypes.NEED_SCHEDULE
-    })
-  } else {
-    // 仅数据源本身为响应式数据，因此数据源自身无法被直接修改，仅
-    // 需要对子代数据进行依赖收集
-    for (const key in (source as object)) {
-      genEffectOfSon(source, key, render)
-    }
-  }
-}
-
-/**
- * 获取传入 chip 节点对应的可插入祖先 dom 容器
- * @param chip 
- */
-export function getAncestorContainer(chip: Chip): Element {
-  let current: Chip = chip.parent
-  while (current.elm === null)
-    current = current.parent
-  return current.elm
+export function initRenderWorkForVirtualChip(chip: Chip, chipRoot: ChipRoot): void {
+  chip.instance = createVirtualChipInstance(chip)
 }
 
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
@@ -476,13 +358,83 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
   }
 }
 
-// 完成 component 类型节点的渲染工作: 当前节点插入父 dom 容器
-export function completeRenderWorkForComponent(chip: Chip) {
+// for-chip: 每个单元节点均对应一个单元渲染器 render，并且是深度收集
+// case 1: iterable source 直接全量被替换，重新执行 render 生成新的
+//   全新节点片段，并与旧的节点片段做 reconcile
+// case 2: iterable source 本身引用不变，对一级子元素做改变，只需要对
+//   一级元素改变的 key 对应的子 render 进行新节点生成，并对新旧节点对
+//   进行 reconcile
+// case 3: iterable source 本身引用不变，对一级以下元素做改变，此情况
+//   下发生值变化的数据所对应的 dom 结构一定是稳定的，无需特殊处理
+// for-chip 编译出的渲染器
+export function completeRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): void {
+  const {
+    source, // 响应式数据源
+    sourceKey, // 如果存在父级数据源，则当前 iterable chip 需要通过 sourceKey 访问循环源数据
+    render
+  } = (chip.instance as VirtualInstance)
+
+  // 创建源数据一级子元素的渲染 effect 收集
+  function genEffectOfSon(source: object, key: string, render: Function): Chip {
+    let ret: Chip
+    let lastChildren: Chip
+    effect<DynamicRenderData>(() => {
+      ret = render(source[key])
+      return { children: ret }
+    }, (newData: DynamicRenderData) => {
+      const children: Chip = (newData.children as Chip)
+      children.wormhole = lastChildren
+      reconcile(children)
+      lastChildren = children
+    }, {
+      whiteList: [{ source, key }],
+      collectOnly: true,
+      scheduler: pushRenderEffectToBuffer,
+      effectType: RenderEffectTypes.NEED_SCHEDULE
+    })
+
+    return ret
+  }
+
+  if (sourceKey) {
+    // 数据源为从属于上级响应式数据源的响应式数据，因此该数据源可被
+    // 完全改变 (引用级)，数据源引用改变后需要根据新的数据源生成 chip
+    // 片段，并对新旧 chip 片段进行 reconcile
+    effect<DynamicRenderData>(() => {
+      const children: Chip[] = []
+      const src = source[sourceKey as any]
+      for (const key in (src as object)) {
+        children.push(genEffectOfSon(src, key, render))
+      }
+      return { children }
+    }, (newData: DynamicRenderData, ctx: Effect) => {
+      // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
+      return genRenderPayloads(chip, chipRoot, newData, ctx.endInLoop)
+    }, {
+      whiteList: [{ source, key: sourceKey }],
+      collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
+      scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
+      effectType: RenderEffectTypes.NEED_SCHEDULE
+    })
+  } else {
+    // 仅数据源本身为响应式数据，因此数据源自身无法被直接修改，仅
+    // 需要对子代数据进行依赖收集
+    for (const key in (source as object)) {
+      genEffectOfSon(source, key, render)
+    }
+  }
+}
+
+// if-chip: 数据变化时触发整个 render 重新执行
+// (src) => {
+//   return src.value === 1 ? <> : src.value === 2 ? <> : <>
+// }
+export function completeRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): void {
 
 }
 
-// 完成虚拟容器类型节点的渲染工作: 当前节点插入父 dom 容器
-export function completeRenderWorkForVirtualChip(chip: Chip) {
+// 完成 component 类型节点的渲染工作: 当前节点插入父 dom 容器
+export function completeRenderWorkForComponent(chip: Chip) {
 
 }
 
@@ -496,8 +448,9 @@ export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): v
       completeRenderWorkForComponent(chip)
       break
     case ChipTypes.CONDITION:
+      completeRenderWorkForConditionChip(chip, chipRoot)
     case ChipTypes.FRAGMENT:
-      completeRenderWorkForVirtualChip(chip)
+      completeRenderWorkForIterableChip(chip, chipRoot)
       break
     default:
       // nuker doesn't have this node type, a bug maybe occurred
@@ -507,6 +460,17 @@ export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): v
 
 export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Chip): void {
 
+}
+
+/**
+ * 获取传入 chip 节点对应的可插入祖先 dom 容器
+ * @param chip 
+ */
+export function getAncestorContainer(chip: Chip): Element {
+  let current: Chip = chip.parent
+  while (current.elm === null)
+    current = current.parent
+  return current.elm
 }
 
 // 创建渲染信息描述 payload

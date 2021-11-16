@@ -6,9 +6,7 @@
  */
 
 import { Effect, injectIntoEffect } from "../../reactivity/src/effect";
-import { RenderModes, pushRenderMode } from "./workRender";
-import { registerJob, JobPriorities } from "./scheduler";
-import { performCommitWork } from "./commit";
+import { RenderModes } from "./workRender";
 
 export interface BufferNode {
   effect: Effect
@@ -19,6 +17,11 @@ export interface BufferNode {
 export const enum RenderEffectTypes {
   CAN_DISPATCH_IMMEDIATELY = 0, // 可立即渲染到实际的 dom 视图上
   NEED_SCHEDULE = 1 // 渲染任务需要进行 reconcile 并接入调度系统
+}
+
+export const enum RenderEffectFlags {
+  RENDER_MODE = 'renderMode',
+  END_IN_LOOP = 'endInLoop'
 }
 
 // 任务缓冲区
@@ -81,19 +84,24 @@ export function flushBuffer(buffer: BufferNode): void {
   // pushRenderMode(renderMode)
 
   // 2. buffer 中的 effect 派发，处理完成的 effect 将移出缓冲区
-  const propKeys: string[] = ['renderMode', 'endInLoop']
   currentNode = buffer
   while (currentNode !== null) {
+    const effect: Effect = currentNode.effect
     // 为 effect 注入渲染模式信息
-    injectIntoEffect(currentNode.effect, propKeys[0], renderMode)
-    if (
-      renderMode === RenderModes.CONCURRENT &&
-      currentNode.next === null
-    ) {
-      // 如果是 buffer 中最后一个 effect 节点且为 concurrent 渲染模式，
-      // 将其标记为当前 event loop 最后一个任务
-      injectIntoEffect(currentNode.effect, propKeys[1], true)
-    }
+    injectIntoEffect(
+      effect,
+      RenderEffectFlags.RENDER_MODE,
+      renderMode
+    )
+    // 如果是 buffer 中最后一个 effect 节点且为 concurrent 渲染模式，
+    // 将其标记为当前 event loop 最后一个任务
+    injectIntoEffect(
+      effect,
+      RenderEffectFlags.END_IN_LOOP,
+      (currentNode.next === null)
+    )
+    // 执行渲染副作用
+    effect()
     currentNode = head(popBuffer())
   }
   // TODO 考虑下是否等当前 buffer 全部执行完毕后一次性清空 buffer

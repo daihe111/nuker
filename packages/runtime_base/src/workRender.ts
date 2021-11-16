@@ -313,7 +313,12 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
     return { children }
   }, (newData: DynamicRenderData, ctx: Effect) => {
     // 新旧 children 进行 reconcile
-    return genRenderPayloads(chip, chipRoot, newData, ctx[RenderEffectFlags.END_IN_LOOP])
+    return genRenderPayloads(
+      chip,
+      chipRoot,
+      newData,
+      ctx[RenderEffectFlags.END_IN_LOOP]
+    )
   }, {
     whiteList: (source as object[]).map((s, i) => ({
       source: s,
@@ -348,10 +353,9 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
     effect<DynamicRenderData>(() => {
       ret = render(source[key])
       return { children: ret }
-    }, (newData: DynamicRenderData) => {
+    }, (newData: DynamicRenderData, ctx: Effect) => {
       const children: Chip = (newData.children as Chip)
-      children.wormhole = lastChildren
-      reconcile(children)
+      performReconcileWork(lastChildren, children, chipRoot, ctx[RenderEffectFlags.END_IN_LOOP])
       lastChildren = children
     }, {
       whiteList: [{ source, key }],
@@ -378,7 +382,12 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
       return { children }
     }, (newData: DynamicRenderData, ctx: Effect) => {
       // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
-      return genRenderPayloads(chip, chipRoot, newData, ctx[RenderEffectFlags.END_IN_LOOP])
+      return genRenderPayloads(
+        chip,
+        chipRoot,
+        newData,
+        ctx[RenderEffectFlags.END_IN_LOOP]
+      )
     }, {
       whiteList: [{ source, key: sourceKey }],
       collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑

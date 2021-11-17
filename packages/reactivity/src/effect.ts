@@ -8,7 +8,7 @@ export interface EffectWhiteListItem {
 
 export interface EffectOptions {
   lazy?: boolean // 是否开启惰性模式
-  collectOnly?: boolean // 是否仅触发 effect 收集
+  collectWhenLazy?: boolean // 惰性 effect 是否需要做收集
   effectType?: number
   whiteList?: Array<EffectWhiteListItem> // 仅包含于白名单中的 key 才会触发 effect 收集操作
   scheduler?: (task: Effect) => void
@@ -65,7 +65,15 @@ export function effect<T = any>(
   options: EffectOptions = {}
 ): Effect {
   const effect: Effect = createEffect(collector, dispatcher, options)
-  if (!options.lazy) {
+  if (options.lazy) {
+    // effect 为惰性，不立即执行
+    if (options.collectWhenLazy) {
+      pushEffect(effect)
+      collector(effect)
+      popEffect()
+    }
+  } else {
+    // effect 立即执行
     effect()
   }
   return effect
@@ -77,6 +85,16 @@ export function injectIntoEffect(effect: Effect, key: string, value: any): Effec
   return effect
 }
 
+export function pushEffect(effect: Effect): void {
+  currentEffect = effect
+  effectStack.push(currentEffect)
+}
+
+export function popEffect(): void {
+  effectStack.pop()
+  currentEffect = effectStack[effectStack.length - 1]
+}
+
 export function createEffect<T = any>(
   collector: (ctx: Effect) => T,
   dispatcher: (data: T, ctx: Effect) => T,
@@ -84,20 +102,13 @@ export function createEffect<T = any>(
 ): Effect {
   const runner = (effect: Effect): T => {
     // TODO 派发时额外的执行工作 (依赖清理工作)
-    currentEffect = effect
-    effectStack.push(currentEffect)
+    pushEffect(effect)
     // 只取值，触发 getter
     const result = collector(effect)
-    effectStack.pop()
-    currentEffect = effectStack[effectStack.length - 1]
+    popEffect()
     // 不能取值，防止取值时 trap 收集到错误的 effect，仅触发取值外的其他副作用
     disableCollecting()
-    
-    if (!options.collectOnly) {
-      // 如果配置了仅做 effect 收集，将不触发 dispatcher 中逻辑的执行
-      dispatcher(result, effect)
-    }
-
+    dispatcher(result, effect)
     enableCollecting()
     options.onRunned && options.onRunned()
     return result

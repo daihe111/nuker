@@ -307,7 +307,7 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
     source, // 响应式数据源
     sourceKey // render 执行时需访问的 key
   } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-  effect<DynamicRenderData>(() => {
+  const e = effect<DynamicRenderData>(() => {
     const children: ChipChildren = render(source, sourceKey)
     chip.children = children
     return { children }
@@ -324,9 +324,12 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
       source: s,
       key: (sourceKey as unknown[])[i]
     })),
-    collectOnly: true,
+    lazy: true,
+    collectWhenLazy: true,
     scheduler: pushRenderEffectToBuffer
   })
+
+  cacheEffectToChip(e, chip)
 }
 
 // 初始化可遍历类型节点的渲染工作
@@ -346,11 +349,11 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
     render // 模板渲染器
   } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
 
-  // 创建源数据一级子元素的渲染 effect 收集
+  // 创建源数据一级子元素的渲染 effect 并收集
   function genEffectOfSon(source: object, key: string, render: Function): Chip {
     let ret: Chip
     let lastChildren: Chip
-    effect<DynamicRenderData>(() => {
+    const e = effect<DynamicRenderData>(() => {
       ret = render(source[key])
       return { children: ret }
     }, (newData: DynamicRenderData, ctx: Effect) => {
@@ -359,11 +362,13 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
       lastChildren = children
     }, {
       whiteList: [{ source, key }],
-      collectOnly: true,
+      lazy: true,
+      collectWhenLazy: true,
       scheduler: pushRenderEffectToBuffer,
       effectType: RenderEffectTypes.NEED_SCHEDULE
     })
 
+    cacheEffectToChip(e, ret)
     return ret
   }
 
@@ -371,7 +376,7 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
     // 数据源为从属于上级响应式数据源的响应式数据，因此该数据源可被
     // 完全改变 (引用级)，数据源引用改变后需要根据新的数据源生成 chip
     // 片段，并对新旧 chip 片段进行 reconcile
-    effect<DynamicRenderData>(() => {
+    const e = effect<DynamicRenderData>(() => {
       const children: Chip[] = []
       const src = source[sourceKey as any]
       for (const key in (src as object)) {
@@ -390,10 +395,13 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
       )
     }, {
       whiteList: [{ source, key: sourceKey }],
-      collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
+      lazy: true,
+      collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
       scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
       effectType: RenderEffectTypes.NEED_SCHEDULE
     })
+
+    cacheEffectToChip(e, chip)
   } else {
     // 仅数据源本身为响应式数据，因此数据源自身无法被直接修改，仅
     // 需要对子代数据进行依赖收集
@@ -422,7 +430,7 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
     const { isDynamic, value } = (props[propName] as ChipPropNode)
     if (isDynamic) {
       // 针对当前 chip 节点的动态属性创建对应的渲染 effect
-      effect<DynamicRenderData>(() => {
+      const e = effect<DynamicRenderData>(() => {
         // collector: 触发当前注册 effect 的收集行为
         return { props: { [propName]: value.value } }
       }, (newData: DynamicRenderData, ctx: Effect) => {
@@ -431,7 +439,8 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
           commitProps(chip.elm, newData.props) :
           genRenderPayloads(chip, chipRoot, newData)
       }, {
-        collectOnly: true, // 首次仅做依赖收集但不执行派发逻辑
+        lazy: true,
+        collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
         scheduler: !chipRoot.isStable && ((job: Effect) => {
           // 将当前 effect 推入渲染任务缓冲区
           pushRenderEffectToBuffer(job)
@@ -440,20 +449,7 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
       })
 
       // 将创建的 effect 存储至当前节点对应 chip context
-      if (chip.effects) {
-        const lastEffect = chip.effects.previous
-        lastEffect.next = {
-          effect,
-          previous: lastEffect,
-          next: chip.effects
-        }
-      } else {
-        chip.effects = {
-          effect,
-          previous: chip.effects,
-          next: chip.effects
-        }
-      }
+      cacheEffectToChip(e, chip)
     }
 
     // 将属性插入对应的 dom 节点
@@ -509,6 +505,36 @@ export function getAncestorContainer(chip: Chip): Element {
   while (current.elm === null)
     current = current.parent
   return current.elm
+}
+
+/**
+ * 将 effect 缓存至 chip 上下文中
+ * @param effect 
+ * @param chip 
+ */
+export function cacheEffectToChip(effect: Effect, chip: Chip): void {
+  if (chip.effects) {
+    const lastEffect = chip.effects.previous
+    if (lastEffect) {
+      lastEffect.next = {
+        effect,
+        previous: lastEffect,
+        next: chip.effects
+      }
+    } else {
+      chip.effects.next = {
+        effect,
+        previous: chip.effects,
+        next: chip.effects
+      }
+    }
+  } else {
+    chip.effects = {
+      effect,
+      previous: null,
+      next: null
+    }
+  }
 }
 
 // 创建渲染信息描述 payload

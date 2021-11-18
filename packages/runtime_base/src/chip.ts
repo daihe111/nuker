@@ -107,7 +107,8 @@ export interface Chip extends ChipCore {
   parent: Chip
   prevSibling: ChipUnit
   nextSibling: ChipUnit
-  firstChild: ChipUnit
+  firstChild?: ChipUnit
+  lastChild?: ChipUnit
   // 连接存在映射关系的新旧 chip 节点的通道指针
   wormhole: ChipUnit
 
@@ -175,13 +176,18 @@ export function isSameChip(vn1: Chip, vn2: Chip) {
   return vn1.tag === vn2.tag && vn1.key === vn2.key;
 }
 
-export function getFirstChipChild(children: ChipChildren): Chip {
+/**
+ * 返回指定位置的 chip 子节点
+ * @param children 
+ * @param index 
+ */
+export function getChipChild(children: ChipChildren, index: number = 0): Chip {
   if (isObject(children)) {
     // single child
     return (children as Chip)
   } else if (isArray(children)) {
     // array children
-    return children[0] ? children[0] : null
+    return children[index]
   } else if (isString(children) || isNumber(children)) {
     // base text child
   } else {

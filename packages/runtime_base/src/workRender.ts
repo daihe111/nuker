@@ -6,7 +6,7 @@ import {
   ChipChildren,
   ChipTypes,
   ChipFlags,
-  getFirstChipChild,
+  getChipChild,
   ChipPropNode,
   isSameChip,
   ChipTypeNames,
@@ -163,23 +163,25 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
 
     // 对于包含动态子节点执行器 render 的 chip，如虚拟容器类型、
     // 组件类型的 chip 节点，init 阶段已经建立了父子关系，因此
-    // firstChild 已经有有效 chip 节点
-    let firstChild = chip.firstChild
-    if (!firstChild) {
-      const firstChipChild = getFirstChipChild(chip.children)
-      chip.firstChild = firstChild = firstChipChild
+    // lastChild 已经有有效 chip 节点
+    let lastChild = chip.lastChild
+    if (!lastChild) {
+      // 无子节点链接，建立父子节点之间的链接
+      const childIdx: number = isArray(chip.children) ? chip.children.length : 0
+      const lastChipChild = getChipChild(chip.children, childIdx)
       let next: Chip
-      if (firstChild) {
-        firstChild.parent = chip
-        chip.currentChildIndex = 0
-        next = firstChild
+      if (lastChipChild) {
+        chip.lastChild = lastChild = lastChipChild
+        lastChild.parent = chip
+        chip.currentChildIndex = childIdx
+        next = lastChild
       } else {
         next = completeChip(chipRoot, chip, mode)
       }
 
       return next
     } else {
-      return firstChild
+      return lastChild
     }
   } else if (chip.phase === ChipPhases.INITIALIZE) {
     // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
@@ -226,22 +228,24 @@ export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot) {
 
 // chip 是 leaf node，完成对该节点的所有处理工作，并标记为 complete
 // 返回下一个要处理的 chip 节点
+// 同级兄弟节点的处理顺序为从尾到头，以保证靠近尾部的节点优先渲染，渲染
+// 靠近头部的节点时可以获取到后面节点的 dom 作为插入锚点
 export function completeChip(chipRoot: ChipRoot, chip: Chip, mode: number): Chip {
   chip.phase = ChipPhases.COMPLETE
   genMutableEffects(chipRoot, chip, mode)
 
   // 计算下一个要处理的节点
-  let sibling = chip.nextSibling
+  let sibling = chip.prevSibling
   if (sibling === null) {
     // finish dive and start swim to handle sibling node
     const parent = chip.parent
-    const nextChipChild: Chip = parent.children[parent.currentChildIndex + 1]
+    const nextChipChild: Chip = parent.children[parent.currentChildIndex - 1]
     if (nextChipChild[ChipFlags.IS_CHIP]) {
       // 当前 chip 有有效的兄弟节点
-      sibling = chip.nextSibling = nextChipChild
-      sibling.prevSibling = chip
+      sibling = chip.prevSibling = nextChipChild
+      sibling.nextSibling = chip
       sibling.parent = parent
-      parent.currentChildIndex++
+      parent.currentChildIndex--
       return sibling
     } else {
       // 无有效兄弟节点，且当前 chip 已处理完毕，开始进入 bubble 阶段，
@@ -758,7 +762,6 @@ export function hasDeletions(chip: Chip): boolean {
 // 配对方式有以下几种:
 // · 类型、key 均相同的相似节点
 // · 旧节点为 null，新节点为有效节点
-// TODO 需删除的旧节点在 diff 过程中创建渲染描述
 export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
   const { tag, props, wormhole, elm } = chip
   if (chip.wormhole) {
@@ -776,8 +779,8 @@ export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
   } else {
     // 无匹配到的旧 chip 节点，新 chip 为待挂载节点
     currentRenderPayload = currentRenderPayload.next = createRenderPayloadNode(
-      elm,
-      domOptions.parentNode(elm),
+      null,
+      chip.parent.elm,
       null, // TODO anchor 解析逻辑待补充
       RenderUpdateTypes.MOUNT,
       chip,

@@ -77,8 +77,6 @@ export const enum RenderUpdateTypes {
   INVALID = -1
 }
 
-// 正在进行中的 chip 节点
-let ongoingChip: ChipUnit = null
 // 当前正在执行渲染工作的组件 instance
 let currentRenderingInstance: ComponentInstance = null
 // 当前正在生成的 RenderPayloadNode
@@ -123,7 +121,7 @@ export function popRenderMode(): number {
 
 // 同步执行任务循环
 export function workLoopSync(chipRoot: ChipRoot, chip: Chip) {
-  ongoingChip = chip
+  let ongoingChip = chip
   while (ongoingChip !== null) {
     ongoingChip = performChipWork(chipRoot, ongoingChip, RenderModes.SYNCHRONOUS)
   }
@@ -167,7 +165,8 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
     let lastChild = chip.lastChild
     if (!lastChild) {
       // 无子节点链接，建立父子节点之间的链接
-      const childIdx: number = isArray(chip.children) ? chip.children.length : 0
+      const children: ChipChildren = chip.children
+      const childIdx: number = isArray(children) ? (children.length - 1) : 0
       const lastChipChild = getChipChild(chip.children, childIdx)
       let next: Chip
       if (lastChipChild) {
@@ -187,23 +186,6 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
     // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
     return completeChip(chipRoot, chip, mode)
   }
-}
-
-// 首次挂载遍历处理 chip tree
-export function workChipsByFirstMount(chipRoot: ChipRoot) {
-  ongoingChip = chipRoot
-  
-}
-
-// 非首次挂载遍历处理 chip tree
-export function workChipsByUpdate(chipRoot: ChipRoot) {
-
-}
-
-// 需进行 dive-swim-bubble 后序遍历模型，保证 effect 的先子后父进行挂载
-// 便于 commit 阶段实用内存进行离屏渲染
-export function traverseChipTree(parent: Chip, children?: ChipChildren): void {
-  
 }
 
 // 为当前 chip 执行可供渲染用的相关准备工作
@@ -239,21 +221,19 @@ export function completeChip(chipRoot: ChipRoot, chip: Chip, mode: number): Chip
   if (sibling === null) {
     // finish dive and start swim to handle sibling node
     const parent = chip.parent
-    const nextChipChild: Chip = parent.children[parent.currentChildIndex - 1]
-    if (nextChipChild[ChipFlags.IS_CHIP]) {
-      // 当前 chip 有有效的兄弟节点
-      sibling = chip.prevSibling = nextChipChild
-      sibling.nextSibling = chip
-      sibling.parent = parent
-      parent.currentChildIndex--
-      return sibling
-    } else {
-      // 无有效兄弟节点，且当前 chip 已处理完毕，开始进入 bubble 阶段，
-      // 回溯祖先节点
-      return parent
+    const children: ChipChildren = parent?.children
+    if (isArray(children)) {
+      sibling = children[--parent.currentChildIndex]
     }
+  }
+
+  if (sibling) {
+    // 当前 chip 有有效的兄弟节点
+    chip.prevSibling = sibling
+    sibling.parent = chip.parent
+    return sibling
   } else {
-    return (sibling as Chip)
+    return chip.parent
   }
 }
 
@@ -631,12 +611,11 @@ export function registerOngoingReconcileWork(
   chipRoot: ChipRoot,
   needHooks: boolean
 ): void {
+  // 待注册进 scheduler 中的节点 reconcile 任务
   function reconcileJob(chip: Chip): Function {
     const next: Chip = reconcile(chip)
     if (next && next[ChipFlags.IS_CHIP]) {
-      return () => {
-        return reconcileJob(next)
-      }
+      return reconcileJob.bind(null, next)
     } else {
       return null
     }
@@ -668,7 +647,6 @@ export function isSkipReconcile(chip: Chip): boolean {
 // 每个节点的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
 export function reconcile(chip: Chip): Chip {
   let nextChip: Chip
-  ongoingChip = chip
   switch (chip.phase) {
     case ChipPhases.PENDING:
       // 1. 首次遍历
@@ -678,18 +656,20 @@ export function reconcile(chip: Chip): Chip {
         nextChip = completeReconcile(chip, true)
       }
       const children: ChipChildren = chip.children
-      const firstChild: Chip = getFirstChipChild(children)
+      const childIdx: number = isArray(children) ? (children.length - 1) : 0
+      const lastChild: Chip = getChipChild(children, childIdx)
 
       chip.phase = ChipPhases.INITIALIZE
 
-      if (firstChild) {
-        chip.firstChild = firstChild
-        firstChild.parent = chip
+      if (lastChild) {
+        chip.lastChild = lastChild
+        lastChild.parent = chip
+        chip.currentChildIndex = childIdx
         // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
         // 通过新旧节点间的映射关系进行节点对的 diff
         const oldChildren: ChipChildren = chip.wormhole.children
         mapChipChildren(oldChildren, children)
-        nextChip = firstChild
+        nextChip = lastChild
       } else {
         nextChip = completeReconcile(chip)
       }
@@ -706,32 +686,30 @@ export function reconcile(chip: Chip): Chip {
 
 // 完成 chip 节点的 reconcile 工作
 export function completeReconcile(chip: Chip, isSkipable: boolean = false): Chip {
-  ongoingChip = chip
   chip.phase = ChipPhases.COMPLETE
 
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
   if (!isSkipable) {
+    // 根据收集的待删除子节点生成对应的 render payload
+    if (hasDeletions(chip)) {
+      genRenderPayloadsForDeletions(chip.deletions)
+    }
     reconcileToGenRenderPayload(chip)
   }
 
-  // 根据收集的待删除子节点生成对应的 render payload
-  if (hasDeletions(chip)) {
-    genRenderPayloadsForDeletions(chip.deletions)
-  }
-
   // 获取下一个需要处理的 chip
-  let sibling: Chip = chip.nextSibling
+  let sibling: Chip = chip.prevSibling
   if (sibling === null) {
     // 尝试创建有效 sibling 节点
     const parent: Chip = chip.parent
-    sibling = parent?.children[++parent.currentChildIndex]
-    if (sibling !== null) {
-      chip.nextSibling = sibling
-      sibling.prevSibling = chip
+    const children: ChipChildren = parent?.children
+    if (isArray(children)) {
+      sibling = children[--parent.currentChildIndex]
     }
   }
 
   if (sibling) {
+    chip.prevSibling = sibling
     sibling.parent = chip.parent
     return sibling
   } else {

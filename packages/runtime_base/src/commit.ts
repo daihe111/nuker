@@ -37,7 +37,8 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
     container,
     parentContainer,
     anchorContainer,
-    context
+    context,
+    auxiliaryContext
   } = renderPayload
   if (type & RenderUpdateTypes.PATCH_PROP) {
     // commit 属性到 dom
@@ -45,7 +46,12 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
   }
 
   if (type & RenderUpdateTypes.MOUNT) {
-    commitMountMutation(tag, props, parentContainer, anchorContainer)
+    commitMountMutation(
+      tag,
+      props,
+      parentContainer || context.parent.elm,
+      anchorContainer || auxiliaryContext.elm
+    )
   }
 
   if (type & RenderUpdateTypes.UNMOUNT) {

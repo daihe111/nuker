@@ -12,7 +12,8 @@ import {
   ChipTypeNames,
   cloneChip,
   createChip,
-  ChipProps
+  ChipProps,
+  isLastChipChild
 } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, createEmptyObject } from "../../share/src";
 import { registerJob, Job, RegisterModes, JobPriorities } from "./scheduler";
@@ -55,7 +56,8 @@ export interface RenderPayloadNode {
   anchorContainer?: Element | null
   tag?: string
   props: Record<string | number | symbol, any>
-  context: Chip
+  context: Chip // 当前 render payload 所属 chip 上下文
+  auxiliaryContext: Chip // 辅助 chip 上下文
 
   // pointers
   next: RenderPayloadNode | null
@@ -528,12 +530,14 @@ export function createRenderPayloadNode(
   anchorContainer: Element | null,
   type: number,
   context: Chip,
+  auxiliaryContext?: Chip,
   tag?: string,
   props?: Record<string | number | symbol, any>
 ): RenderPayloadNode {
   return {
     [RenderFlags.IS_RENDER_PAYLOAD]: true,
     context,
+    auxiliaryContext,
     type,
     tag,
     props,
@@ -573,6 +577,7 @@ export function genRenderPayloads(
         null,
         type,
         chip,
+        null,
         (tag as string),
         props
       )
@@ -611,11 +616,13 @@ export function registerOngoingReconcileWork(
   chipRoot: ChipRoot,
   needHooks: boolean
 ): void {
+  const originalChip: Chip = chip
   // 待注册进 scheduler 中的节点 reconcile 任务
-  function reconcileJob(chip: Chip): Function {
-    const next: Chip = reconcile(chip)
-    if (next && next[ChipFlags.IS_CHIP]) {
-      return reconcileJob.bind(null, next)
+  function reconcileJob(chip: Chip, lastChip: Chip): Function {
+    const next: Chip = reconcile(chip, lastChip)
+    // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
+    if (next !== originalChip) {
+      return reconcileJob.bind(null, next, chip)
     } else {
       return null
     }
@@ -645,7 +652,7 @@ export function isSkipReconcile(chip: Chip): boolean {
 }
 
 // 每个节点的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
-export function reconcile(chip: Chip): Chip {
+export function reconcile(chip: Chip, lastChip: Chip): Chip {
   let nextChip: Chip
   switch (chip.phase) {
     case ChipPhases.PENDING:
@@ -653,7 +660,7 @@ export function reconcile(chip: Chip): Chip {
       // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
       // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
       if (isSkipReconcile(chip)) {
-        nextChip = completeReconcile(chip, true)
+        nextChip = completeReconcile(chip, lastChip, true)
       }
       const children: ChipChildren = chip.children
       const childIdx: number = isArray(children) ? (children.length - 1) : 0
@@ -671,13 +678,13 @@ export function reconcile(chip: Chip): Chip {
         mapChipChildren(oldChildren, children)
         nextChip = lastChild
       } else {
-        nextChip = completeReconcile(chip)
+        nextChip = completeReconcile(chip, lastChip)
       }
 
       break
     case ChipPhases.INITIALIZE:
       // 2. 回溯
-      nextChip = completeReconcile(chip)
+      nextChip = completeReconcile(chip, lastChip)
       break
   }
 
@@ -685,16 +692,20 @@ export function reconcile(chip: Chip): Chip {
 }
 
 // 完成 chip 节点的 reconcile 工作
-export function completeReconcile(chip: Chip, isSkipable: boolean = false): Chip {
+export function completeReconcile(
+  chip: Chip,
+  auxiliaryChip: Chip,
+  isSkipable: boolean = false
+): Chip {
   chip.phase = ChipPhases.COMPLETE
 
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
   if (!isSkipable) {
-    // 根据收集的待删除子节点生成对应的 render payload
+    // 优先处理子节点事务，根据收集的待删除子节点生成对应的 render payload
     if (hasDeletions(chip)) {
       genRenderPayloadsForDeletions(chip.deletions)
     }
-    reconcileToGenRenderPayload(chip)
+    reconcileToGenRenderPayload(chip, auxiliaryChip)
   }
 
   // 获取下一个需要处理的 chip
@@ -738,9 +749,9 @@ export function hasDeletions(chip: Chip): boolean {
 
 // 新旧 chip (仅 chip 节点本身) diff 生成更新描述
 // 配对方式有以下几种:
-// · 类型、key 均相同的相似节点
-// · 旧节点为 null，新节点为有效节点
-export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
+// · 类型、key 均相同的相似节点 (属性更新)
+// · 旧节点为 null，新节点为有效节点 (挂载新节点)
+export function reconcileToGenRenderPayload(chip: Chip, auxiliaryChip: Chip): RenderPayloadNode {
   const { tag, props, wormhole, elm } = chip
   if (chip.wormhole) {
     // 有匹配的旧节点，且新旧 chip 节点一定是相似节点
@@ -751,6 +762,7 @@ export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
       null,
       RenderUpdateTypes.PATCH_PROP,
       chip,
+      null,
       (tag as string),
       propsToPatch
     )
@@ -758,10 +770,11 @@ export function reconcileToGenRenderPayload(chip: Chip): RenderPayloadNode {
     // 无匹配到的旧 chip 节点，新 chip 为待挂载节点
     currentRenderPayload = currentRenderPayload.next = createRenderPayloadNode(
       null,
-      chip.parent.elm,
-      null, // TODO anchor 解析逻辑待补充
+      null, // parent dom 节点在 commit 阶段实时获取
+      null, // anchor dom 节点在 commit 阶段实时获取
       RenderUpdateTypes.MOUNT,
       chip,
+      !isLastChipChild(chip, chip.parent?.children) && auxiliaryChip,
       (tag as string),
       props
     )

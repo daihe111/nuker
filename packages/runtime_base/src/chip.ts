@@ -195,6 +195,14 @@ export function getChipChild(children: ChipChildren, index: number = 0): Chip {
   }
 }
 
+export function getLastChipChild(children: ChipChildren): Chip {
+
+}
+
+export function isLastChipChild(chip: Chip, children: ChipChildren): boolean {
+  return (getLastChipChild(children) === chip)
+}
+
 export function createChip(
   tag: ChipTag,
   props?: ChipProps,

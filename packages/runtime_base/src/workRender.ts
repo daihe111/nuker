@@ -13,7 +13,8 @@ import {
   cloneChip,
   createChip,
   ChipProps,
-  isLastChipChild
+  isLastChipChild,
+  getLastChipChild
 } from "./chip";
 import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, createEmptyObject } from "../../share/src";
 import { registerJob, Job, RegisterModes, JobPriorities } from "./scheduler";
@@ -139,9 +140,7 @@ export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip): void {
     // get next chip to working
     const next = performChipWork(chipRoot, chip, RenderModes.CONCURRENT)
     if (next && next[ChipFlags.IS_CHIP]) {
-      return () => {
-        return chipPerformingJob(chipRoot, next)
-      }
+      return chipPerformingJob.bind(null, chipRoot, next)
     } else {
       return null
     }
@@ -168,13 +167,12 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
     if (!lastChild) {
       // 无子节点链接，建立父子节点之间的链接
       const children: ChipChildren = chip.children
-      const childIdx: number = isArray(children) ? (children.length - 1) : 0
-      const lastChipChild = getChipChild(chip.children, childIdx)
+      const lastChipChild = getLastChipChild(children)
       let next: Chip
       if (lastChipChild) {
         chip.lastChild = lastChild = lastChipChild
         lastChild.parent = chip
-        chip.currentChildIndex = childIdx
+        chip.currentChildIndex = isArray(children) ? (children.length - 1) : 0
         next = lastChild
       } else {
         next = completeChip(chipRoot, chip, mode)
@@ -663,19 +661,15 @@ export function reconcile(chip: Chip, lastChip: Chip): Chip {
         nextChip = completeReconcile(chip, lastChip, true)
       }
       const children: ChipChildren = chip.children
-      const childIdx: number = isArray(children) ? (children.length - 1) : 0
-      const lastChild: Chip = getChipChild(children, childIdx)
+      const lastChild: Chip = getLastChipChild(children)
 
       chip.phase = ChipPhases.INITIALIZE
 
       if (lastChild) {
         chip.lastChild = lastChild
         lastChild.parent = chip
-        chip.currentChildIndex = childIdx
-        // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
-        // 通过新旧节点间的映射关系进行节点对的 diff
-        const oldChildren: ChipChildren = chip.wormhole.children
-        mapChipChildren(oldChildren, children)
+        chip.currentChildIndex = isArray(children) ? (children.length - 1) : 0
+        initReconcile(chip)
         nextChip = lastChild
       } else {
         nextChip = completeReconcile(chip, lastChip)
@@ -689,6 +683,28 @@ export function reconcile(chip: Chip, lastChip: Chip): Chip {
   }
 
   return nextChip
+}
+
+export function initReconcile(chip: Chip): void {
+  const wormhole = chip.wormhole
+  if (wormhole) {
+    // 1. 有对应的旧 chip 节点
+    // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
+    // 通过新旧节点间的映射关系进行节点对的 diff
+    mapChipChildren(wormhole.children, chip.children)
+  } else {
+    // 2. 无对应旧 chip 节点，表示当前 chip 为待挂载节点
+    // 生成对应的 dom 容器挂载 render payload
+    currentRenderPayload = currentRenderPayload.next = createRenderPayloadNode(
+      null,
+      null,
+      null,
+      RenderUpdateTypes.MOUNT,
+      chip,
+      null,
+      (chip.tag as string)
+    )
+  }
 }
 
 // 完成 chip 节点的 reconcile 工作
@@ -774,7 +790,8 @@ export function reconcileToGenRenderPayload(chip: Chip, auxiliaryChip: Chip): Re
       null, // anchor dom 节点在 commit 阶段实时获取
       RenderUpdateTypes.MOUNT,
       chip,
-      !isLastChipChild(chip, chip.parent?.children) && auxiliaryChip,
+      // 当且仅当上一个处理节点为兄弟节点时才会传入锚点辅助 chip
+      (auxiliaryChip.prevSibling === chip) && auxiliaryChip,
       (tag as string),
       props
     )

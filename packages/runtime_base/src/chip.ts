@@ -181,24 +181,32 @@ export function isSameChip(vn1: Chip, vn2: Chip) {
  * @param children 
  * @param index 
  */
-export function getChipChild(children: ChipChildren, index: number = 0): Chip {
-  if (isObject(children)) {
+export function getChipChild(children: Chip[], index: number = 0): Chip {
+  return children[index]
+}
+
+/**
+ * 返回 chip 的最后一个子节点
+ * @param children 
+ */
+export function getLastChipChild(children: ChipChildren): Chip {
+  if (isArray(children)) {
+    // array children
+    return getChipChild(children, children.length - 1)
+  } else if (isObject(children)) {
     // single child
     return (children as Chip)
-  } else if (isArray(children)) {
-    // array children
-    return children[index]
-  } else if (isString(children) || isNumber(children)) {
-    // base text child
   } else {
+    // invalid children
     return null
   }
 }
 
-export function getLastChipChild(children: ChipChildren): Chip {
-
-}
-
+/**
+ * 判断 chip 节点是否为最后一个子节点
+ * @param chip 
+ * @param children 
+ */
 export function isLastChipChild(chip: Chip, children: ChipChildren): boolean {
   return (getLastChipChild(children) === chip)
 }

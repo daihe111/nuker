@@ -1,7 +1,8 @@
 import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
 import { Chip, ChipRoot } from "./chip";
-import { performContextUpdateWork } from "./idle";
+import { performIdleWork } from "./idle";
+import { registerJob } from "./scheduler";
 
 // 待删除 prop 的占位标志位
 export const PROP_TO_DELETE = Symbol()
@@ -24,8 +25,8 @@ export function performCommitWork(chipRoot: ChipRoot): void {
     }
   }
 
-  // 进入 idle 阶段，批量执行 chip 更新任务
-  performContextUpdateWork(chipRoot)
+  // 进入 idle 阶段，批量执行闲时任务，如 chip 信息更新任务
+  registerJob(performIdleWork.bind(null, chipRoot))
 }
 
 // 将渲染描述载荷提交到真正的 dom 上

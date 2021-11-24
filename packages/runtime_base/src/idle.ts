@@ -1,19 +1,27 @@
-import { Chip, ChipProps, ChipChildren, ChipKey, ChipRef, ContextUpdaterUnit, ChipRoot } from "./chip";
+import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend } from "../../share/src";
-import { registerJob } from "./scheduler";
+import { registerJob, JobPriorities } from "./scheduler";
 
 export const enum ChipInsertingPositions {
   BEFORE = 0, // 向前插入
   AFTER = 1 // 向后插入
 }
 
-// idle 阶段批量执行 reconcile 阶段产生的信息更新任务，且任务支持调度系统的中断与恢复
-export function performContextUpdateWork(chipRoot: ChipRoot): void {
-  let currentUpdater: ContextUpdaterUnit = chipRoot.cotextUpdaters
-  while (currentUpdater !== null) {
-    registerJob(currentUpdater.updater)
-    currentUpdater = currentUpdater.next
+// idle 阶段批量执行 reconcile & commit 阶段产生的闲时任务，且任务支持调度系统的中断与恢复
+export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function): void {
+  let currentJob: IdleJobUnit = chipRoot.idleJobs
+  while (currentJob !== null) {
+    registerJob(
+      currentJob?.job,
+      JobPriorities.NORMAL,
+      null,
+      0,
+      (currentJob.next === null) && {
+        hooks: { onCompleted: onIdleCompleted }
+      }
+    )
+    currentJob = currentJob.next
   }
 }
 

@@ -10,6 +10,10 @@ import {
   extend
 } from "../../share/src"
 
+export interface JobHooks {
+  onCompleted?: Function
+}
+
 export interface Job<T = any> {
   (...args: any[]): T | Job | void
   id?: number | string
@@ -24,7 +28,7 @@ export interface Job<T = any> {
   // 当前任务节点的子任务快照，测试环境可为祖先任务创建
   // 子任务的快照用于调度分析
   scopedSnapshot?: JobNode | null
-  hooks?: Record<string, Function>
+  hooks?: JobHooks
   options?: JobOptions
 }
 
@@ -34,7 +38,7 @@ export interface JobNode {
   next: JobNode
   isRoot?: boolean
   type?: number | string
-  hooks?: Record<string, Function>
+  hooks?: JobHooks
 }
 
 export const enum JobListTypes {
@@ -73,7 +77,7 @@ export interface JobOptions {
   isDeepFirst?: boolean // 任务执行是否遵循深度优先规则
   expireStrategy?: number // 过期任务的处理策略
   openSnapshot?: boolean // 是否开启任务单元执行快照
-  hooks?: Record<string, Function>
+  hooks?: JobHooks
 }
 
 // 任务控制器
@@ -89,7 +93,7 @@ export const enum ExpireStrategies {
   REUSE = 1, // 过期任务在不同的任务执行 loop 中可复用，按照过期时间排序可再次插入执行队列
   REBIRTH = 2, // 过期任务需要重生，作为新的任务插入执行队列
   IDLE = 3, // 执行队列空闲时批量执行过期任务、剩余备选任务
-  INVALID = 4 // 过期任务作为垃圾任务被抛弃
+  INVALID = 4 // 过期任务作为垃圾任务被抛弃，之后将不会再有执行机会
 }
 
 export const enum MacrotaskTypes {
@@ -306,12 +310,9 @@ export function fetchPriorJobs(): void {
     const job = currentNode.job
     if (job.startTime <= currentTime) {
       if (job.isExpired) {
-        const expireStrategy = job.options.expireStrategy
+        // 过期任务处理
+        const expireStrategy = job.options?.expireStrategy || ExpireStrategies.DEFAULT
         switch (expireStrategy) {
-          case ExpireStrategies.DEFAULT:
-            popJob(backupListRoot)
-            pushJob(job, jobListRoot)
-            break
           case ExpireStrategies.REBIRTH:
             popJob(backupListRoot)
             rebirthJob(job)
@@ -323,15 +324,17 @@ export function fetchPriorJobs(): void {
             popJob(backupListRoot)
             pushJob(job, jobListRoot)
             break
-          default:
+          case ExpireStrategies.REUSE:
             popJob(backupListRoot)
             pushJob(job, jobListRoot)
-            break
+          default:
+            // do nothing
         }
+      } else {
+        // 非过期任务处理
+        popJob(backupListRoot)
+        pushJob(job, jobListRoot)
       }
-      
-      popJob(backupListRoot)
-      pushJob(job, jobListRoot)
     } else {
       break
     }
@@ -341,8 +344,6 @@ export function fetchPriorJobs(): void {
 
 // 处理任务节点
 export function handleJob(jobNode: JobNode, jobRoot: JobNode): JobNode {
-  // 任务过期了，需要将过期任务从执行队列中转移到备选队列，
-  // 然后等到当前 loop 结束后再从备选队列中进行任务调度
   const job = jobNode.job
   const isExpired = job.expirationTime < genCurrentTime()
   if (!isExpired) {
@@ -361,7 +362,8 @@ export function handleJob(jobNode: JobNode, jobRoot: JobNode): JobNode {
     }
   } else {
     // 过期任务处理
-    switch (job.options?.expireStrategy) {
+    const expireStrategy: number = job.options?.expireStrategy || ExpireStrategies.DEFAULT
+    switch (expireStrategy) {
       case ExpireStrategies.DEFAULT:
         const childJob: Job = invokeJob(jobNode, isExpired)
         if (childJob === null) {

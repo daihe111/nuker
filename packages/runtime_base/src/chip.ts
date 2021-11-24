@@ -61,10 +61,10 @@ export interface ChipEffectUnit {
   next: ChipEffectUnit
 }
 
-export interface ContextUpdaterUnit {
-  updater: () => void
-  previous: ContextUpdaterUnit
-  next: ContextUpdaterUnit
+export interface IdleJobUnit {
+  job: () => void
+  previous: IdleJobUnit
+  next: IdleJobUnit
 }
 
 export const enum ChipPhases {
@@ -121,9 +121,9 @@ export interface Chip extends ChipCore {
 
 export interface ChipRoot extends Chip {
   // 整颗 chip 树生成的全部副作用构成的链表队列 (按照由子到父的顺序)
-  effects: ChipEffectUnit | null
-  // chip 树渲染信息更新任务队列
-  cotextUpdaters: ContextUpdaterUnit | null
+  effects: ChipEffectUnit
+  // 闲时任务队列
+  idleJobs: IdleJobUnit
   // 渲染描述载荷队列
   renderPayloads: RenderPayloadNode
   // chip 树结构是否稳定

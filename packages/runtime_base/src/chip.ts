@@ -62,7 +62,7 @@ export interface ChipEffectUnit {
 }
 
 export interface IdleJobUnit {
-  job: () => void
+  job: Function
   previous: IdleJobUnit
   next: IdleJobUnit
 }

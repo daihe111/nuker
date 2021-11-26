@@ -580,15 +580,11 @@ export function genRenderPayloads(
         props
       )
       currentRenderPayload = currentRenderPayload.next = payload
+      return needHooks ? performCommitWork.bind(null, chipRoot) : null
     },
     JobPriorities.NORMAL,
     null,
-    0,
-    needHooks && {
-      hooks: {
-        onCompleted: performCommitWork.bind(null, chipRoot)
-      }
-    }
+    0
   )
 }
 

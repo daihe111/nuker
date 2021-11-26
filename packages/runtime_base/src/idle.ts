@@ -1,28 +1,48 @@
 import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
-import { extend } from "../../share/src";
-import { registerJob, JobPriorities } from "./scheduler";
+import { extend, isFunction } from "../../share/src";
 
 export const enum ChipInsertingPositions {
   BEFORE = 0, // 向前插入
   AFTER = 1 // 向后插入
 }
 
-// idle 阶段批量执行 reconcile & commit 阶段产生的闲时任务，且任务支持调度系统的中断与恢复
-export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function): void {
-  let currentJob: IdleJobUnit = chipRoot.idleJobs
-  while (currentJob !== null) {
-    registerJob(
-      currentJob?.job,
-      JobPriorities.NORMAL,
-      null,
-      0,
-      (currentJob.next === null) && {
-        hooks: { onCompleted: onIdleCompleted }
+// idle 阶段批量执行 reconcile & commit 阶段产生的闲时任务，且任务支持调度系统的中断与恢复，
+// 以保证闲时任务不长时间执行阻塞主线程
+// reconcile tasks -> commit -> idle 需要作为一个整体任务注册进调度系统，idle 及之前阶段
+// 产生的 reconcile 任务须保证排在 idle 任务之后，以保证新的 reconcile 任务执行时能访问到正
+// 确的 chip 数据状态，避免数据状态错乱
+export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function): Function {
+  // 闲时任务执行单元，作为调度任务的子任务
+  function idleJobPerformingUnit(jobNode: IdleJobUnit): Function {
+    const { job, next } = jobNode
+    try {
+      job()
+      if (next) {
+        return idleJobPerformingUnit.bind(null, next)
+      } else {
+        // 所有闲时任务均执行完毕，标记调度任务执行完毕，并执行对应的生命周期
+        if (isFunction(onIdleCompleted)) {
+          onIdleCompleted()
+        }
+        return null
       }
-    )
-    currentJob = currentJob.next
+    } catch (e) {
+      // 当闲时任务执行失败时，重试 3 次执行，重试次数达到阈值后，创建
+      // 下一任务执行的子任务
+      for (let i = 0; i < 3; i++) {
+        try {
+          job()
+        } catch (e) {
+          continue
+        }
+      }
+
+      return idleJobPerformingUnit.bind(null, next)
+    }
   }
+
+  return idleJobPerformingUnit.bind(null, chipRoot.idleJobs)
 }
 
 // 用 reconcile 阶段新生成的 chip 子树更新 chip 局部子树，并清理过期状态
@@ -120,4 +140,37 @@ export function insertChipContext(chip: Chip, anchorChip: Chip, position: number
 
 export function updateRefs(chip: Chip): Chip {
 
+}
+
+/**
+ * 将闲时任务缓存至闲时任务队列
+ * @param job 
+ * @param chipRoot 
+ */
+export function cacheIdleJob(job: Function, chipRoot: ChipRoot): Function {
+  const root: IdleJobUnit = chipRoot.idleJobs
+  if (root) {
+    const lastNode: IdleJobUnit = root.previous
+    if (lastNode) {
+      root.previous = lastNode.next = {
+        job,
+        previous: lastNode,
+        next: root
+      }
+    } else {
+      root.previous = root.next = {
+        job,
+        previous: root,
+        next: root
+      }
+    }
+  } else {
+    chipRoot.idleJobs = {
+      job,
+      previous: null,
+      next: null
+    }
+  }
+
+  return job
 }

@@ -297,7 +297,7 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
     return { children }
   }, (newData: DynamicRenderData, ctx: Effect) => {
     // 新旧 children 进行 reconcile
-    return genRenderPayloads(
+    return genReconcileEffectss(
       chip,
       chipRoot,
       newData,
@@ -371,7 +371,7 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
       return { children }
     }, (newData: DynamicRenderData, ctx: Effect) => {
       // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
-      return genRenderPayloads(
+      return genReconcileEffectss(
         chip,
         chipRoot,
         newData,
@@ -419,9 +419,9 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
         return { props: { [propName]: value.value } }
       }, (newData: DynamicRenderData, ctx: Effect) => {
         // dispatcher: 响应式数据更新后触发
-        return ctx[RenderEffectFlags.RENDER_MODE] === RenderModes.SYNCHRONOUS ?
+        return (ctx[RenderEffectFlags.RENDER_MODE] === RenderModes.SYNCHRONOUS ?
           commitProps(chip.elm, newData.props) :
-          genRenderPayloads(chip, chipRoot, newData)
+          genReconcileEffectss(chip, chipRoot, newData))
       }, {
         lazy: true,
         collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
@@ -546,46 +546,51 @@ export function createRenderPayloadNode(
   }
 }
 
-// 生成更新描述信息
-export function genRenderPayloads(
+/**
+ * 生成重新渲染时的副作用:
+ * 1. 直接使用新的渲染数据进行 dom 渲染
+ * 2. 需要进行 reconcile 进行 concurrent 渲染，生成 render payload，
+ *    而不直接操作 dom 更新视图
+ * @param chip 
+ * @param chipRoot 
+ * @param renderData 
+ * @param needCommit
+ */
+export function genReconcileEffectss(
   chip: Chip,
   chipRoot: ChipRoot,
   renderData: DynamicRenderData,
-  needHooks?: boolean
+  needCommit?: boolean
 ): void {
   // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 chip
   // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
   const { props, children } = renderData
   const { elm, tag } = chip
-  let type = RenderUpdateTypes.PATCH_PROP
-  if (children) {
-    // 处理动态子节点，生成动态子节点的 RenderPayloadNode
-    const newChip = cloneChip(chip, props, children)
-    // trigger reconcile diff
-    performReconcileWork(chip, newChip, chipRoot, needHooks)
-    type = RenderUpdateTypes.PATCH_CHILDREN
-  }
-
-  registerJob(
-    () => {
+  if (props) {
+    // 存在动态属性，创建对应的 render payload，并接入调度系统
+    registerJob(() => {
       const payload = createRenderPayloadNode(
         elm,
-        chip.parent.elm,
         null,
-        type,
+        null,
+        RenderUpdateTypes.PATCH_PROP,
         chip,
         null,
         (tag as string),
         props
       )
       currentRenderPayload = currentRenderPayload.next = payload
-      return needHooks ? performCommitWork.bind(null, chipRoot) : null
-    },
-    JobPriorities.NORMAL,
-    null,
-    0
-  )
+      return (needCommit ? performCommitWork.bind(null, chipRoot) : null)
+    })
+  }
+
+  if (children) {
+    // 存在动态子代节点，触发新旧子代节点的 diff 流程，并生产对应的 render payload
+    const newChip = cloneChip(chip, chip.props, children)
+    // trigger reconcile diff
+    performReconcileWork(chip, newChip, chipRoot, needCommit)
+  }
 }
 
 // diff 执行入口函数
@@ -593,11 +598,11 @@ export function performReconcileWork(
   oldChip: Chip,
   newChip: Chip,
   chipRoot: ChipRoot,
-  needHooks?: boolean
+  needCommit?: boolean
 ): void {
   try {
     newChip.wormhole = oldChip
-    registerOngoingReconcileWork(newChip, chipRoot, needHooks)
+    registerOngoingReconcileWork(newChip, chipRoot, needCommit)
   } catch (e) {
 
   }
@@ -608,7 +613,7 @@ export function performReconcileWork(
 export function registerOngoingReconcileWork(
   chip: Chip,
   chipRoot: ChipRoot,
-  needHooks: boolean
+  needCommit: boolean
 ): void {
   const originalChip: Chip = chip
   // 待注册进 scheduler 中的节点 reconcile 任务
@@ -618,21 +623,11 @@ export function registerOngoingReconcileWork(
     if (next !== originalChip) {
       return reconcileJob.bind(null, next, chip)
     } else {
-      return null
+      return (needCommit ? performCommitWork.bind(null, chipRoot) : null)
     }
   }
 
-  registerJob(
-    reconcileJob.bind(null, chip),
-    JobPriorities.NORMAL,
-    null,
-    0,
-    needHooks && {
-      hooks: {
-        onCompleted: performCommitWork.bind(null, chipRoot)
-      }
-    }
-  )
+  registerJob(reconcileJob.bind(null, chip))
 }
 
 /**

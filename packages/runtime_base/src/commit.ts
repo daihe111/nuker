@@ -2,7 +2,6 @@ import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
 import { Chip, ChipRoot } from "./chip";
 import { performIdleWork, cacheIdleJob } from "./idle";
-import { registerJob } from "./scheduler";
 
 // 待删除 prop 的占位标志位
 export const PROP_TO_DELETE = Symbol()

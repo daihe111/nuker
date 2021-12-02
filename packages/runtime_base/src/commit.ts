@@ -2,6 +2,7 @@ import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
 import { Chip, ChipRoot } from "./chip";
 import { performIdleWork, cacheIdleJob } from "./idle";
+import { isFunction } from "../../share/src";
 
 // 待删除 prop 的占位标志位
 export const PROP_TO_DELETE = Symbol()
@@ -9,7 +10,7 @@ export const PROP_TO_DELETE = Symbol()
 // payload 链表节点在 reconcile 阶段按照由子到父的顺序插入，commit 时
 // 按照先后顺序执行 payload 节点，即可保证 commit 的执行顺序与 reconcile 一致
 export function performCommitWork(chipRoot: ChipRoot): void {
-  let currentPayload = chipRoot.renderPayloads
+  let currentPayload = chipRoot.renderPayloads?.first
   let i = 0
   while (currentPayload !== null) {
     try {
@@ -45,29 +46,59 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
     parentContainer,
     anchorContainer,
     context,
-    auxiliaryContext
+    auxiliaryContext,
+    callback
   } = renderPayload
+  let target: Element
+
   if (type & RenderUpdateTypes.PATCH_PROP) {
     // commit 属性到 dom
-    commitProps(container, props)
+    target = commitProps(
+      container || context.elm,
+      props
+    )
   }
 
   if (type & RenderUpdateTypes.MOUNT) {
-    commitMountMutation(
-      tag,
-      props,
+    target = commitMountMutation(
+      container || context.elm,
       parentContainer || context.parent.elm,
       anchorContainer || auxiliaryContext.elm
     )
   }
 
   if (type & RenderUpdateTypes.UNMOUNT) {
-    commitUnmountMutation(container, parentContainer, context)
+    target = commitUnmountMutation(
+      container,
+      parentContainer,
+      context
+    )
   }
 
   if (type & RenderUpdateTypes.MOVE) {
-    commitMoveMutation(container, parentContainer, anchorContainer)
+    target = commitMoveMutation(
+      container,
+      parentContainer,
+      anchorContainer
+    )
   }
+
+  if (type & RenderUpdateTypes.CREATE_ELEMENT) {
+    target = commitNewElement(tag)
+  }
+
+  if (isFunction(callback)) {
+    callback(context, target)
+  }
+}
+
+/**
+ * 创建新的 dom 容器
+ * @param tag 
+ */
+export function commitNewElement(tag: string): Element {
+  const isSVG = (tag === 'svg')
+  return domOptions.createElement(tag, isSVG, false)
 }
 
 /**
@@ -75,7 +106,7 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
  * @param container 
  * @param props 
  */
-export function commitProps(container: Element, props: object) {
+export function commitProps(container: Element, props: object): Element {
   if (container && props) {
     for (const propName in props) {
       const value: symbol | any = props[propName]
@@ -89,31 +120,34 @@ export function commitProps(container: Element, props: object) {
         }
       }
     }
+
+    return container
+  } else {
+    return null
   }
 }
 
 /**
  * 向真实 dom 挂载全新的节点
- * @param tag 
- * @param props 
+ * @param target
  * @param parentContainer 
  * @param anchorContainer 
  */
 export function commitMountMutation(
-  tag: string,
-  props: object,
+  target: Element,
   parentContainer: Element,
   anchorContainer?: Element
-) {
-  if (parentContainer) {
-    const isSVG = tag === 'svg'
-    const child = domOptions.createElement(tag, isSVG, false)
-    commitProps(child, props)
+): Element {
+  if (target && parentContainer) {
     if (anchorContainer) {
-      domOptions.insert(child, parentContainer, anchorContainer)
+      domOptions.insert(target, parentContainer, anchorContainer)
     } else {
-      domOptions.appendChild(child, parentContainer)
+      domOptions.appendChild(target, parentContainer)
     }
+
+    return target
+  } else {
+    return null
   }
 }
 
@@ -127,9 +161,12 @@ export function commitUnmountMutation(
   target: Element,
   parentContainer: Element,
   context: Chip
-) {
+): Element {
   if (parentContainer && target) {
     domOptions.remove(target, parentContainer)
+    return target
+  } else {
+    return null
   }
 }
 
@@ -148,5 +185,9 @@ export function commitMoveMutation(
     const clone: Element = domOptions.cloneNode(target)
     domOptions.remove(target, parentContainer)
     domOptions.insert(clone, parentContainer, anchor)
+
+    return target
+  } else {
+    return null
   }
 }

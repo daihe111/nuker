@@ -1,8 +1,13 @@
-export interface BaseListNode {
+export interface BaseListNode<AdvancedListNode = any> {
   // data
   [key: string]: any
 
   // pointers
-  previous: BaseListNode
-  next: BaseListNode | null
+  previous?: AdvancedListNode
+  next?: AdvancedListNode
+}
+
+export interface ListAccessor<Node> {
+  first: Node
+  last: Node
 }

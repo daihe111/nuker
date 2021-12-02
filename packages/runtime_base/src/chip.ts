@@ -7,6 +7,7 @@ import {
 import { isObject, isArray, isString, isNumber } from '../../share/src';
 import { RenderPayloadNode, ChildrenRenderer } from "./workRender";
 import { VirtualInstance, VirtualOptions } from "./virtualChip";
+import { ListAccessor } from "../../share/src/shareTypes";
 
 export type ChipTag = | string | Component | VirtualOptions
 
@@ -99,7 +100,7 @@ export interface Chip extends ChipCore {
   // 存储节点对应的所有 effect，用于 chip 上下文销毁时对 effect 
   // 进行靶向移除
   effects?: ChipEffectUnit | null
-  renderPayloads?: RenderPayloadNode
+  renderPayloads?: ListAccessor<RenderPayloadNode>
 
   // pointers
   // chip 树中仅包含动态节点，在生成 chip 树时会将 dom 树
@@ -125,7 +126,7 @@ export interface ChipRoot extends Chip {
   // 闲时任务队列
   idleJobs: IdleJobUnit
   // 渲染描述载荷队列
-  renderPayloads: RenderPayloadNode
+  renderPayloads: ListAccessor<RenderPayloadNode>
   // chip 树结构是否稳定
   isStable: boolean
 }

@@ -64,7 +64,6 @@ export interface ChipEffectUnit {
 
 export interface IdleJobUnit {
   job: Function
-  previous: IdleJobUnit
   next: IdleJobUnit
 }
 
@@ -120,11 +119,10 @@ export interface Chip extends ChipCore {
   effectFlags?: number
 }
 
+// nuker 的虚拟根节点
 export interface ChipRoot extends Chip {
-  // 整颗 chip 树生成的全部副作用构成的链表队列 (按照由子到父的顺序)
-  effects: ChipEffectUnit
   // 闲时任务队列
-  idleJobs: IdleJobUnit
+  idleJobs: ListAccessor<IdleJobUnit>
   // 渲染描述载荷队列
   renderPayloads: ListAccessor<RenderPayloadNode>
   // chip 树结构是否稳定

@@ -42,7 +42,7 @@ export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function):
     }
   }
 
-  return idleJobPerformingUnit.bind(null, chipRoot.idleJobs)
+  return idleJobPerformingUnit.bind(null, chipRoot.idleJobs.first.job)
 }
 
 // 用 reconcile 阶段新生成的 chip 子树更新 chip 局部子树，并清理过期状态
@@ -148,27 +148,17 @@ export function updateRefs(chip: Chip): Chip {
  * @param chipRoot 
  */
 export function cacheIdleJob(job: Function, chipRoot: ChipRoot): Function {
-  const root: IdleJobUnit = chipRoot.idleJobs
-  if (root) {
-    const lastNode: IdleJobUnit = root.previous
-    if (lastNode) {
-      root.previous = lastNode.next = {
-        job,
-        previous: lastNode,
-        next: root
-      }
-    } else {
-      root.previous = root.next = {
-        job,
-        previous: root,
-        next: root
-      }
-    }
+  const idleJobs = chipRoot.idleJobs
+  const jobNode = {
+    job,
+    next: null
+  }
+  if (idleJobs) {
+    idleJobs.last = idleJobs.last.next = jobNode
   } else {
     chipRoot.idleJobs = {
-      job,
-      previous: null,
-      next: null
+      first: jobNode,
+      last: jobNode
     }
   }
 

@@ -642,32 +642,14 @@ export function isSkipReconcile(chip: Chip): boolean {
   return (isStatic && currentRenderingInstance.chip?.chipType !== ChipTypes.CONDITION)
 }
 
-// 每个节点的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
+// 每个 chip 节点对的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
 export function reconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip {
+  // 下一组要处理的 chip 节点对
   let nextChip: Chip
   switch (chip.phase) {
     case ChipPhases.PENDING:
       // 1. 首次遍历
-      // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
-      // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
-      if (isSkipReconcile(chip)) {
-        nextChip = completeReconcile(chip, lastChip, chipRoot, true)
-      }
-      const children: ChipChildren = chip.children
-      const lastChild: Chip = getLastChipChild(children)
-
-      chip.phase = ChipPhases.INITIALIZE
-
-      if (lastChild) {
-        chip.lastChild = lastChild
-        lastChild.parent = chip
-        chip.currentChildIndex = isArray(children) ? (children.length - 1) : 0
-        initReconcile(chip, chipRoot)
-        nextChip = lastChild
-      } else {
-        nextChip = completeReconcile(chip, lastChip, chipRoot)
-      }
-
+      nextChip = initReconcile(chip, lastChip, chipRoot)
       break
     case ChipPhases.INITIALIZE:
       // 2. 回溯
@@ -678,36 +660,69 @@ export function reconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip 
   return nextChip
 }
 
-export function initReconcile(chip: Chip, chipRoot: ChipRoot): void {
-  const wormhole = chip.wormhole
-  if (wormhole) {
-    // 1. 有对应的旧 chip 节点
-    // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
-    // 通过新旧节点间的映射关系进行节点对的 diff
-    mapChipChildren(wormhole.children, chip.children)
+/**
+ * 深度遍历阶段处理 chip 节点对
+ * @param chip 
+ * @param lastChip 
+ * @param chipRoot 
+ */
+export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip {
+  chip.phase = ChipPhases.INITIALIZE
+
+  // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
+  // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
+  let nextChip: Chip
+  if (isSkipReconcile(chip)) {
+    nextChip = completeReconcile(chip, lastChip, chipRoot, true)
   } else {
-    // 2. 无对应旧 chip 节点，表示当前 chip 为待挂载节点
-    // 生成对应的 dom 容器创建 render payload
-    const payload = createRenderPayloadNode(
-      null,
-      null,
-      null,
-      RenderUpdateTypes.CREATE_ELEMENT,
-      chip,
-      null,
-      (chip.tag as string),
-      null,
-      (context: Chip, elm: Element) => {
-        // 当前 render payload commit 之后，将创建的 dom 容器
-        // 挂载到 chip 上下文上，便于子节点挂载时能够访问到对应的父 dom 容器
-        context.elm = elm
-      }
-    )
-    cacheRenderPayload(payload, chipRoot)
+    const { children, wormhole } = chip
+    const lastChild: Chip = getLastChipChild(children)
+
+    if (!wormhole) {
+      // 无对应旧 chip 节点，表示当前 chip 为待挂载节点
+      // 生成对应的 dom 容器创建 render payload
+      const payload = createRenderPayloadNode(
+        null,
+        null,
+        null,
+        RenderUpdateTypes.CREATE_ELEMENT,
+        chip,
+        null,
+        (chip.tag as string),
+        null,
+        (context: Chip, elm: Element) => {
+          // 当前 render payload commit 之后，将创建的 dom 容器
+          // 挂载到 chip 上下文上，便于子节点挂载时能够访问到对应的父 dom 容器
+          context.elm = elm
+        }
+      )
+      cacheRenderPayload(payload, chipRoot)
+    }
+
+    if (lastChild) {
+      chip.lastChild = lastChild
+      lastChild.parent = chip
+      chip.currentChildIndex = (isArray(children) ? (children.length - 1) : 0)
+      // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
+      // 通过新旧节点间的映射关系进行节点对的 diff
+      mapChipChildren(wormhole.children, children)
+      nextChip = lastChild
+    } else {
+      nextChip = completeReconcile(chip, lastChip, chipRoot)
+    }
   }
+
+  return nextChip
 }
 
-// 完成 chip 节点的 reconcile 工作
+/**
+ * 回溯阶段处理 chip 节点对
+ * 完成 chip 节点对的 diff，生成渲染描述信息 (render payload)
+ * @param chip 
+ * @param auxiliaryChip 
+ * @param chipRoot 
+ * @param isSkipable 
+ */
 export function completeReconcile(
   chip: Chip,
   auxiliaryChip: Chip,
@@ -737,10 +752,13 @@ export function completeReconcile(
   }
 
   if (sibling) {
+    // 如果存在同级兄弟节点，则兄弟节点作为下一个要处理的 chip 节点
     chip.prevSibling = sibling
     sibling.parent = chip.parent
     return sibling
   } else {
+    // 无同级兄弟节点，表明与当前节点同级的节点全部处理完毕，则开始
+    // 回溯，以当前节点的父节点作为下一个待处理的 chip 节点
     return chip.parent
   }
 }
@@ -790,7 +808,10 @@ export function reconcileToGenRenderPayload(
     )
     cacheRenderPayload(payload, chipRoot)
   } else {
-    // 无匹配到的旧 chip 节点，新 chip 为待挂载节点
+    // 无匹配到的旧 chip 节点，新 chip 为待挂载节点。由于 dive 阶段
+    // 已创建生成 dom 容器的 render payload，因此 bubble 阶段需要
+    // 完成节点属性的 patch 、节点的挂载，这样才能完整将新的节点挂载
+    // 到 dom 上
     const patchPropsPayload = createRenderPayloadNode(
       null,
       null,
@@ -810,9 +831,7 @@ export function reconcileToGenRenderPayload(
       auxiliaryChip
     )
     payload = [patchPropsPayload, mountPayload]
-    payload.forEach(p => {
-      cacheRenderPayload(p, chipRoot)
-    })
+    cacheRenderPayload(payload, chipRoot)
   }
   
   return payload
@@ -870,14 +889,23 @@ export function reconcileProps(newProps: ChipProps, oldProps: ChipProps): Record
  * @param payload 
  * @param chipRoot 
  */
-export function cacheRenderPayload(payload: RenderPayloadNode, chipRoot: ChipRoot): RenderPayloadNode {
-  const payloads = chipRoot.renderPayloads
-  if (payloads) {
-    payloads.last = payloads.last.next = payload
+export function cacheRenderPayload(
+  payload: RenderPayloadNode | RenderPayloadNode[],
+  chipRoot: ChipRoot
+): RenderPayloadNode | RenderPayloadNode[] {
+  if (isArray(payload)) {
+    for (let i = 0; i < payload.length; i++) {
+      cacheRenderPayload(payload[i], chipRoot)
+    }
   } else {
-    chipRoot.renderPayloads = {
-      first: payload,
-      last: payload
+    const payloads = chipRoot.renderPayloads
+    if (payloads) {
+      payloads.last = payloads.last.next = payload
+    } else {
+      chipRoot.renderPayloads = {
+        first: payload,
+        last: payload
+      }
     }
   }
 

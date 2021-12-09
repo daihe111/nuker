@@ -1,4 +1,4 @@
-import { BaseListNode } from "./shareTypes"
+import { BaseListNode, ListAccessor } from "./shareTypes"
 
 export const EMPTY_OBJ: { readonly [key: string]: any } = {}
 export const EMPTY_ARR = []
@@ -86,4 +86,8 @@ export function genBaseListNode(
     previous: previous || null,
     next: next || null
   }
+}
+
+export function createListAccessor<Node = null>(): ListAccessor<Node> {
+  return { first: null, last: null }
 }

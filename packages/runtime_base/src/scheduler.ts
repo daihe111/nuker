@@ -9,6 +9,7 @@ import {
   createEmptyObject,
   extend
 } from "../../share/src"
+import { ListAccessor } from "../../share/src/shareTypes"
 
 export interface JobHooks {
   onCompleted?: Function
@@ -25,20 +26,26 @@ export interface Job<T = any> {
   expirationTime?: number
   delay?: number
   isExpired?: boolean
-  // 当前任务节点的子任务快照，测试环境可为祖先任务创建
-  // 子任务的快照用于调度分析
-  scopedSnapshot?: JobNode | null
   hooks?: JobHooks
   options?: JobOptions
 }
 
+export interface SnapshotNode {
+  content: Job
+  next: SnapshotNode
+}
+
+// 任务宿主节点
 export interface JobNode {
   job: Job
-  previous: JobNode
+  previous?: JobNode
   next: JobNode
   isRoot?: boolean
   type?: number | string
   hooks?: JobHooks
+  // 当前任务节点的子任务快照，测试环境可为祖先任务创建
+  // 子任务的快照用于调度分析
+  scopedSnapshot?: ListAccessor<SnapshotNode>
 }
 
 export const enum JobListTypes {
@@ -209,21 +216,8 @@ export function registerJob(
     job.expirationTime = job.startTime + job.timeout
   }
 
-  // 为祖先任务创建子任务快照
-  if (__DEV__ && options.openSnapshot) {
-    createSnapshotForAncestor(job)
-  }
-
   assignJob(job, registerMode)
   return job
-}
-
-// 为祖先任务创建快照容器
-export function createSnapshotForAncestor(job: Job) {
-  job.scopedSnapshot = createJobNode(null)
-  // 创建快照双向循环链表，便于进行尾部节点的访问，省去遍历节点的开销
-  job.scopedSnapshot.next = job.scopedSnapshot
-  job.scopedSnapshot.previous = job.scopedSnapshot
 }
 
 // 调度系统的执行者
@@ -429,14 +423,7 @@ export function invokeJob(jobNode: JobNode, ...jobArgs: any[]): Job | null {
     const childJob: Job | void = job(job.controller, ...jobArgs)
 
     // 将当前已执行完的子任务添加进快照
-    if (__DEV__ && job.scopedSnapshot) {
-      const currentNode = createJobNode(job)
-      const lastNode = job.scopedSnapshot.previous
-      lastNode.next = currentNode
-      currentNode.previous = lastNode
-      currentNode.next = job.scopedSnapshot
-      job.scopedSnapshot.previous = currentNode
-    }
+    cacheJobSnapshot(job, jobNode)
 
     if (isFunction(childJob)) {
       const { isDeepFirst } = job.options
@@ -463,6 +450,26 @@ export function invokeJob(jobNode: JobNode, ...jobArgs: any[]): Job | null {
   }
 
   return null
+}
+
+/**
+ * 将已执行的任务作为快照缓存至宿主节点的快照队列里
+ * @param job 
+ * @param container 
+ */
+export function cacheJobSnapshot(job: Job, container: JobNode): Job {
+  const snapshots = container.scopedSnapshot
+  const snapshot = { content: job, next: null }
+  if (snapshots) {
+    snapshots.last = snapshots.last.next = snapshot
+  } else {
+    container.scopedSnapshot = {
+      first: snapshot,
+      last: snapshot
+    }
+  }
+
+  return job
 }
 
 // 任务执行暂停

@@ -2,11 +2,6 @@ import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot } from ".
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend, isFunction } from "../../share/src";
 
-export const enum ChipInsertingPositions {
-  BEFORE = 0, // 向前插入
-  AFTER = 1 // 向后插入
-}
-
 // idle 阶段批量执行 reconcile & commit 阶段产生的闲时任务，且任务支持调度系统的中断与恢复，
 // 以保证闲时任务不长时间执行阻塞主线程
 // reconcile tasks -> commit -> idle 需要作为一个整体任务注册进调度系统，idle 及之前阶段
@@ -77,7 +72,7 @@ export function updateChipContext(
  * 清理已失效 chip 上下文以及其持有的待回收信息
  * @param context 
  */
-export function removeChipContext(context: Chip): void {
+export function removeChipContext(context: Chip, lastContext: Chip): void {
   let currentEffect = context.effects
   while (currentEffect !== null) {
     // 将当前 effect 从依赖仓库中卸载
@@ -86,56 +81,30 @@ export function removeChipContext(context: Chip): void {
   }
 
   // 将 chip context 从树中移除
-  const {
-    prevSibling: previous,
-    nextSibling: next
-  } = context
-  if (previous) {
-    previous.nextSibling = next
-    if (next) {
-      next.prevSibling = previous
-    }
+  if (lastContext === context.parent) {
+    context.parent.firstChild = context.prevSibling
   } else {
-    next.prevSibling = null
-    context.parent.firstChild = next
+    lastContext.prevSibling = context.prevSibling
   }
-  context.parent = context.prevSibling = context.nextSibling = null
 }
 
 /**
  * 将新挂载的 chip 上下文插入到 chip 树中
  * @param chip 
  */
-export function insertChipContext(chip: Chip, anchorChip: Chip, position: number = ChipInsertingPositions.AFTER): Chip {
-  updateRefs(chip)
+export function insertChipContext(context: Chip, anchorContext: Chip, isLast: boolean): Chip {
   // 将 chip 插入 chip tree
-  if (position === ChipInsertingPositions.BEFORE) {
-    // 向前插入
-    const previous: Chip = anchorChip.prevSibling
-    if (previous) {
-      previous.nextSibling = anchorChip.prevSibling = chip
-      chip.prevSibling = previous
-      chip.nextSibling = anchorChip
-    } else {
-      // 锚点为首个子节点
-      chip.nextSibling = anchorChip
-      anchorChip.prevSibling = chip
-    }
+  if (isLast) {
+    context.parent = anchorContext
+    context.prevSibling = anchorContext.firstChild
+    anchorContext.firstChild = context
   } else {
-    // 向后插入
-    const next: Chip = anchorChip.nextSibling
-    if (next) {
-      next.prevSibling = anchorChip.nextSibling = chip
-      chip.prevSibling = anchorChip
-      chip.nextSibling = next
-    } else {
-      // 锚点为最后一个子节点
-      chip.prevSibling = anchorChip
-      anchorChip.nextSibling = chip
-    }
+    context.prevSibling = anchorContext.prevSibling
+    context.parent = anchorContext.parent
+    anchorContext.prevSibling = context
   }
 
-  return chip
+  return context
 }
 
 export function updateRefs(chip: Chip): Chip {

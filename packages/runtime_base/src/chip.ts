@@ -11,12 +11,13 @@ import { ListAccessor } from "../../share/src/shareTypes";
 
 export type ChipTag = | string | Component | VirtualOptions
 
-export interface ChipPropNode {
-  isDynamic?: boolean
-  value: any
-}
+export type DynamicValueGetter = () => any
 
-export type ChipProps = Record<string, ChipPropNode>
+export type StaticValue = string | number
+
+export type ChipPropValue = DynamicValueGetter | StaticValue
+
+export type ChipProps = Record<string, ChipPropValue>
 
 export type ChipChildren = Chip | Chip[] | ChildrenRenderer | null
 
@@ -58,7 +59,6 @@ export interface ChipRef {
 
 export interface ChipEffectUnit {
   effect: Effect
-  previous: ChipEffectUnit
   next: ChipEffectUnit
 }
 
@@ -98,7 +98,7 @@ export interface Chip extends ChipCore {
   deletions?: Chip[] // 缓存当前 chip 下需要删除的一级子 chip
   // 存储节点对应的所有 effect，用于 chip 上下文销毁时对 effect 
   // 进行靶向移除
-  effects?: ChipEffectUnit | null
+  effects?: ListAccessor<ChipEffectUnit>
   renderPayloads?: ListAccessor<RenderPayloadNode>
 
   // pointers

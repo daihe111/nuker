@@ -1,31 +1,23 @@
 import {
   Chip,
   ChipRoot,
-  ChipUnit,
   ChipPhases,
   ChipChildren,
   ChipTypes,
   ChipFlags,
-  getChipChild,
-  ChipPropNode,
-  isSameChip,
-  ChipTypeNames,
   cloneChip,
-  createChip,
   ChipProps,
-  isLastChipChild,
   getLastChipChild
 } from "./chip";
-import { genBaseListNode, isArray, isNumber, isString, isObject, isFunction, createEmptyObject } from "../../share/src";
-import { registerJob, Job, RegisterModes, JobPriorities } from "./scheduler";
-import { ComponentInstance, Component, createComponentInstance, reuseComponentInstance } from "./component";
+import { isArray, isFunction, createEmptyObject } from "../../share/src";
+import { registerJob } from "./scheduler";
+import { ComponentInstance, Component, createComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectBuffer";
-import { ReactiveTypes } from "../../reactivity/src/reactive";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -297,7 +289,7 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
     return { children }
   }, (newData: DynamicRenderData, ctx: Effect) => {
     // 新旧 children 进行 reconcile
-    return genReconcileEffectss(
+    return genReconcileEffects(
       chip,
       chipRoot,
       newData,
@@ -371,7 +363,7 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
       return { children }
     }, (newData: DynamicRenderData, ctx: Effect) => {
       // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
-      return genReconcileEffectss(
+      return genReconcileEffects(
         chip,
         chipRoot,
         newData,
@@ -398,30 +390,31 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
 }
 
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
-export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
+export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): void {
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
   const parentElm: Element = getAncestorContainer(chip)
   const elm = chip.elm
+  // TODO 节点挂载顺序为从后向前，因此需指定当前 element 挂载的锚点
   if (parentElm && elm) {
     domOptions.appendChild(elm, parentElm)
   }
 
-  // 检索当前 element 节点的属性，区分动态属性和静态属性
+  // 检索当前 chip 节点的属性，为 chip 对应的 element 节点挂载属性，
+  // 区分动态属性和静态属性
   const props = chip.props
   for (const propName in props) {
-    // 收集动态属性，动态属性的 value 是 wrapper 化的，避免
-    // 访问属性 value 时是立即执行的
-    const { isDynamic, value } = (props[propName] as ChipPropNode)
-    if (isDynamic) {
+    let value = props[propName]
+    if (isFunction(value)) {
       // 针对当前 chip 节点的动态属性创建对应的渲染 effect
       const e = effect<DynamicRenderData>(() => {
         // collector: 触发当前注册 effect 的收集行为
-        return { props: { [propName]: value.value } }
+        value = (value as Function)()
+        return { props: { [propName]: value } }
       }, (newData: DynamicRenderData, ctx: Effect) => {
         // dispatcher: 响应式数据更新后触发
         return (ctx[RenderEffectFlags.RENDER_MODE] === RenderModes.SYNCHRONOUS ?
           commitProps(chip.elm, newData.props) :
-          genReconcileEffectss(chip, chipRoot, newData))
+          genReconcileEffects(chip, chipRoot, newData))
       }, {
         lazy: true,
         collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
@@ -438,7 +431,7 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot) {
 
     // 将属性插入对应的 dom 节点
     if (elm) {
-      elm.setAttribute(propName, value)
+      domOptions.setAttribute(elm, propName, `${value}`)
     }
   }
 }
@@ -496,29 +489,22 @@ export function getAncestorContainer(chip: Chip): Element {
  * @param effect 
  * @param chip 
  */
-export function cacheEffectToChip(effect: Effect, chip: Chip): void {
-  if (chip.effects) {
-    const lastEffect = chip.effects.previous
-    if (lastEffect) {
-      lastEffect.next = {
-        effect,
-        previous: lastEffect,
-        next: chip.effects
-      }
-    } else {
-      chip.effects.next = {
-        effect,
-        previous: chip.effects,
-        next: chip.effects
-      }
-    }
+export function cacheEffectToChip(effect: Effect, chip: Chip): Effect {
+  const effects = chip.effects
+  const effectNode = {
+    effect,
+    next: null
+  }
+  if (effects) {
+    effect.last = effects.last.next = effectNode
   } else {
     chip.effects = {
-      effect,
-      previous: null,
-      next: null
+      first: effectNode,
+      last: effectNode
     }
   }
+
+  return effect
 }
 
 // 创建渲染信息描述 payload
@@ -558,7 +544,7 @@ export function createRenderPayloadNode(
  * @param renderData 
  * @param needCommit
  */
-export function genReconcileEffectss(
+export function genReconcileEffects(
   chip: Chip,
   chipRoot: ChipRoot,
   renderData: DynamicRenderData,
@@ -793,6 +779,9 @@ export function reconcileToGenRenderPayload(
 ): RenderPayloadNode | RenderPayloadNode[] {
   const { tag, props, wormhole } = chip
   let payload: RenderPayloadNode | RenderPayloadNode[]
+  const onPropPatched = (elm: Element, ) => {
+
+  }
   if (wormhole) {
     // 有匹配的旧节点，且新旧 chip 节点一定是相似节点
     const propsToPatch: object = reconcileProps(props, wormhole?.props)
@@ -804,7 +793,8 @@ export function reconcileToGenRenderPayload(
       chip,
       null,
       (tag as string),
-      propsToPatch
+      propsToPatch,
+      onPropPatched
     )
     cacheRenderPayload(payload, chipRoot)
   } else {
@@ -820,7 +810,8 @@ export function reconcileToGenRenderPayload(
       chip,
       null,
       (tag as string),
-      props
+      props,
+      onPropPatched
     )
     const mountPayload = createRenderPayloadNode(
       null,

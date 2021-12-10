@@ -11,7 +11,7 @@ export interface VirtualInstance {
   chip: Chip | null
   source: Array<object> | object
   sourceKey?: Array<unknown> | unknown
-  render: (source: any, sourceKey: any) => ChipChildren
+  render: (source?: any, sourceKey?: any) => ChipChildren
   refs: object[] | null
   [key: string]: any
 }

@@ -278,13 +278,9 @@ export function initRenderWorkForElement(chip: Chip) {
 //   return source[sourceKey[0]] === 1 ? <A /> : (source[sourceKey[1]] === 2 ? <B /> : <C />)
 // }
 export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): void {
-  const {
-    render, // chip 节点渲染器
-    source, // 响应式数据源
-    sourceKey // render 执行时需访问的 key
-  } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
+  const { render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
   const e = effect<DynamicRenderData>(() => {
-    const children: ChipChildren = render(source, sourceKey)
+    const children: ChipChildren = render()
     chip.children = children
     return { children }
   }, (newData: DynamicRenderData, ctx: Effect) => {
@@ -296,10 +292,6 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
       ctx[RenderEffectFlags.END_IN_LOOP]
     )
   }, {
-    whiteList: (source as object[]).map((s, i) => ({
-      source: s,
-      key: (sourceKey as unknown[])[i]
-    })),
     lazy: true,
     collectWhenLazy: true,
     scheduler: pushRenderEffectToBuffer
@@ -337,7 +329,6 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
       performReconcileWork(lastChildren, children, chipRoot, ctx[RenderEffectFlags.END_IN_LOOP])
       lastChildren = children
     }, {
-      whiteList: [{ source, key }],
       lazy: true,
       collectWhenLazy: true,
       scheduler: pushRenderEffectToBuffer,
@@ -370,7 +361,6 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
         ctx[RenderEffectFlags.END_IN_LOOP]
       )
     }, {
-      whiteList: [{ source, key: sourceKey }],
       lazy: true,
       collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
       scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
@@ -482,6 +472,10 @@ export function getAncestorContainer(chip: Chip): Element {
   while (current.elm === null)
     current = current.parent
   return current.elm
+}
+
+export function createRenderEffect(): Effect {
+
 }
 
 /**

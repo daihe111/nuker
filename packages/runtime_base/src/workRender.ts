@@ -7,7 +7,8 @@ import {
   ChipFlags,
   cloneChip,
   ChipProps,
-  getLastChipChild
+  getLastChipChild,
+  DynamicValueGetter
 } from "./chip";
 import { isArray, isFunction, createEmptyObject } from "../../share/src";
 import { registerJob } from "./scheduler";
@@ -15,7 +16,7 @@ import { ComponentInstance, Component, createComponentInstance } from "./compone
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
-import { createVirtualChipInstance, VirtualInstance } from "./virtualChip";
+import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectBuffer";
 
@@ -279,25 +280,7 @@ export function initRenderWorkForElement(chip: Chip) {
 // }
 export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): void {
   const { render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-  const e = effect<DynamicRenderData>(() => {
-    const children: ChipChildren = render()
-    chip.children = children
-    return { children }
-  }, (newData: DynamicRenderData, ctx: Effect) => {
-    // 新旧 children 进行 reconcile
-    return genReconcileEffects(
-      chip,
-      chipRoot,
-      newData,
-      ctx[RenderEffectFlags.END_IN_LOOP]
-    )
-  }, {
-    lazy: true,
-    collectWhenLazy: true,
-    scheduler: pushRenderEffectToBuffer
-  })
-
-  cacheEffectToChip(e, chip)
+  createRenderEffectForCondition(chip, chipRoot, render)
 }
 
 // 初始化可遍历类型节点的渲染工作
@@ -396,27 +379,7 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): vo
     let value = props[propName]
     if (isFunction(value)) {
       // 针对当前 chip 节点的动态属性创建对应的渲染 effect
-      const e = effect<DynamicRenderData>(() => {
-        // collector: 触发当前注册 effect 的收集行为
-        value = (value as Function)()
-        return { props: { [propName]: value } }
-      }, (newData: DynamicRenderData, ctx: Effect) => {
-        // dispatcher: 响应式数据更新后触发
-        return (ctx[RenderEffectFlags.RENDER_MODE] === RenderModes.SYNCHRONOUS ?
-          commitProps(chip.elm, newData.props) :
-          genReconcileEffects(chip, chipRoot, newData))
-      }, {
-        lazy: true,
-        collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
-        scheduler: !chipRoot.isStable && ((job: Effect) => {
-          // 将当前 effect 推入渲染任务缓冲区
-          pushRenderEffectToBuffer(job)
-        }),
-        effectType: RenderEffectTypes.CAN_DISPATCH_IMMEDIATELY
-      })
-
-      // 将创建的 effect 存储至当前节点对应 chip context
-      cacheEffectToChip(e, chip)
+      createRenderEffectForProp(chip, chipRoot, propName, value)
     }
 
     // 将属性插入对应的 dom 节点
@@ -464,6 +427,76 @@ export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Ch
 }
 
 /**
+ * 节点动态属性创建渲染副作用并收集依赖
+ * @param chip 
+ * @param chipRoot 
+ * @param propName 
+ * @param value 
+ */
+export function createRenderEffectForProp(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  propName: string,
+  value: DynamicValueGetter
+): any {
+  const e = effect<DynamicRenderData>(() => {
+    // collector: 触发当前注册 effect 的收集行为
+    value = value()
+    return { props: { [propName]: value } }
+  }, (newData: DynamicRenderData, ctx: Effect) => {
+    // dispatcher: 响应式数据更新后触发
+    return (ctx[RenderEffectFlags.RENDER_MODE] === RenderModes.SYNCHRONOUS ?
+      commitProps(chip.elm, newData.props) :
+      genReconcileEffects(chip, chipRoot, newData))
+  }, {
+    lazy: true,
+    collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
+    scheduler: !chipRoot.isStable && ((job: Effect) => {
+      // 将当前 effect 推入渲染任务缓冲区
+      pushRenderEffectToBuffer(job)
+    }),
+    effectType: RenderEffectTypes.CAN_DISPATCH_IMMEDIATELY
+  })
+
+  // 将创建的 effect 存储至当前节点对应 chip context
+  cacheEffectToChip(e, chip)
+  return value
+}
+
+/**
+ * 条件节点动态数据创建对应的渲染副作用并收集依赖
+ * @param chip 
+ * @param chipRoot 
+ * @param render 
+ */
+export function createRenderEffectForCondition(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  render: VirtualChipRender
+): Effect {
+  const e = effect<DynamicRenderData>(() => {
+    const children: ChipChildren = render()
+    chip.children = children
+    return { children }
+  }, (newData: DynamicRenderData, ctx: Effect) => {
+    // 新旧 children 进行 reconcile
+    return genReconcileEffects(
+      chip,
+      chipRoot,
+      newData,
+      ctx[RenderEffectFlags.END_IN_LOOP]
+    )
+  }, {
+    lazy: true,
+    collectWhenLazy: true,
+    scheduler: pushRenderEffectToBuffer
+  })
+
+  cacheEffectToChip(e, chip)
+  return e
+}
+
+/**
  * 获取传入 chip 节点对应的可插入祖先 dom 容器
  * @param chip 
  */
@@ -472,10 +505,6 @@ export function getAncestorContainer(chip: Chip): Element {
   while (current.elm === null)
     current = current.parent
   return current.elm
-}
-
-export function createRenderEffect(): Effect {
-
 }
 
 /**
@@ -843,13 +872,29 @@ export function genRenderPayloadsForDeletions(deletions: Chip[], chipRoot: ChipR
  * @param newProps 
  * @param oldProps 
  */
-export function reconcileProps(newProps: ChipProps, oldProps: ChipProps): Record<string, any> {
+export function reconcileProps(
+  newChip: Chip,
+  oldChip: Chip,
+  chipRoot: ChipRoot
+): Record<string, any> {
+  const newProps: ChipProps = newChip.props
+  const oldProps: ChipProps = oldChip.props
   const ret = createEmptyObject()
   // 遍历新 props，找出需要 patch 的 prop
   for (const propName in newProps) {
-    const value = newProps[propName]?.value
+    let value = newProps[propName]
+    if (isFunction(value)) {
+      // 为新属性中的动态数据创建渲染副作用，并执行依赖收集
+      value = createRenderEffectForProp(
+        newChip.wormhole,
+        chipRoot,
+        propName,
+        value
+      )
+    }
+
     if (propName in oldProps) {
-      if (value !== oldProps[propName]?.value) {
+      if (value !== oldProps[propName]) {
         ret[propName] = value
       }
     } else {

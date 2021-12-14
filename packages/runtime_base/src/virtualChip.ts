@@ -1,17 +1,18 @@
 import { Chip, ChipChildren } from "./chip";
-import { ChildrenRenderer } from "./workRender";
+
+export type VirtualChipRender = (source?: any, sourceKey?: any) => ChipChildren
 
 export interface VirtualOptions {
   source: Array<object> | object
   sourceKey?: Array<unknown> | unknown
-  render: (source: any, sourceKey: any) => ChipChildren
+  render: VirtualChipRender
 }
 
 export interface VirtualInstance {
   chip: Chip | null
   source: Array<object> | object
   sourceKey?: Array<unknown> | unknown
-  render: (source?: any, sourceKey?: any) => ChipChildren
+  render: VirtualChipRender
   refs: object[] | null
   [key: string]: any
 }

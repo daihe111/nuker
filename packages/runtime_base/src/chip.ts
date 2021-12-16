@@ -4,14 +4,19 @@ import {
   isReservedTag,
   isReservedComponentTag
 } from './domOptions';
-import { isObject, isArray, isString, isNumber } from '../../share/src';
+import { isObject, isArray, isString, isNumber, isFunction } from '../../share/src';
 import { RenderPayloadNode, ChildrenRenderer } from "./workRender";
 import { VirtualInstance, VirtualOptions } from "./virtualChip";
 import { ListAccessor } from "../../share/src/shareTypes";
 
 export type ChipTag = | string | Component | VirtualOptions
 
-export type DynamicValueGetter = () => any
+// 动态属性取值器
+export interface DynamicValueGetter {
+  (): any
+  value?: any // 动态属性取值之后的字面量
+  effect?: Effect // 动态属性关联 effect
+}
 
 export type StaticValue = string | number
 
@@ -125,6 +130,8 @@ export interface ChipRoot extends Chip {
   idleJobs: ListAccessor<IdleJobUnit>
   // 渲染描述载荷队列
   renderPayloads: ListAccessor<RenderPayloadNode>
+  // 当前渲染周期内缓存的已失效 effect，这些 effect 将在 idle 阶段被释放
+  abandonedEffects: ListAccessor<ChipEffectUnit>
   // chip 树结构是否稳定
   isStable: boolean
 }
@@ -234,4 +241,12 @@ export function createChip(
     firstChild: null
     wormhole: null
   }
+}
+
+/**
+ * 获取 chip 属性值的字面量
+ * @param valueContainer 
+ */
+export function getPropLiteralValue(valueContainer: ChipPropValue): StaticValue {
+  return isFunction(valueContainer) ? valueContainer.value : valueContainer
 }

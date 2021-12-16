@@ -8,7 +8,11 @@ import {
   cloneChip,
   ChipProps,
   getLastChipChild,
-  DynamicValueGetter
+  DynamicValueGetter,
+  ChipEffectUnit,
+  StaticValue,
+  ChipPropValue,
+  getPropLiteralValue
 } from "./chip";
 import { isArray, isFunction, createEmptyObject } from "../../share/src";
 import { registerJob } from "./scheduler";
@@ -427,6 +431,16 @@ export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Ch
 }
 
 /**
+ * 为动态属性容器设置对应的属性字面量
+ * @param literal 
+ * @param propContainer 
+ */
+export function setLiteralForProp(literal: StaticValue, propContainer: DynamicValueGetter): StaticValue {
+  propContainer.value = literal
+  return literal
+}
+
+/**
  * 节点动态属性创建渲染副作用并收集依赖
  * @param chip 
  * @param chipRoot 
@@ -438,15 +452,19 @@ export function createRenderEffectForProp(
   chipRoot: ChipRoot,
   propName: string,
   value: DynamicValueGetter
-): any {
+): StaticValue {
+  let literal: StaticValue
   const e = effect<DynamicRenderData>(() => {
     // collector: 触发当前注册 effect 的收集行为
-    value = value()
-    return { props: { [propName]: value } }
+    // 执行动态属性取值器获取属性字面量
+    literal = value()
+    setLiteralForProp(literal, value)
+    return { props: { [propName]: literal } }
   }, (newData: DynamicRenderData, ctx: Effect) => {
     // dispatcher: 响应式数据更新后触发
+    const elm: Element = chip.wormhole?.elm
     return (ctx[RenderEffectFlags.RENDER_MODE] === RenderModes.SYNCHRONOUS ?
-      commitProps(chip.elm, newData.props) :
+      commitProps(elm, newData.props) :
       genReconcileEffects(chip, chipRoot, newData))
   }, {
     lazy: true,
@@ -460,7 +478,7 @@ export function createRenderEffectForProp(
 
   // 将创建的 effect 存储至当前节点对应 chip context
   cacheEffectToChip(e, chip)
-  return value
+  return literal
 }
 
 /**
@@ -577,12 +595,12 @@ export function genReconcileEffects(
   // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
   // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
   const { props, children } = renderData
-  const { elm, tag } = chip
+  const { wormhole, tag } = chip
   if (props) {
     // 存在动态属性，创建对应的 render payload，并接入调度系统
     registerJob(() => {
       const payload = createRenderPayloadNode(
-        elm,
+        wormhole?.elm,
         null,
         null,
         RenderUpdateTypes.PATCH_PROP,
@@ -807,7 +825,7 @@ export function reconcileToGenRenderPayload(
   }
   if (wormhole) {
     // 有匹配的旧节点，且新旧 chip 节点一定是相似节点
-    const propsToPatch: object = reconcileProps(props, wormhole?.props)
+    const propsToPatch: object = reconcileProps(chip, wormhole, chipRoot)
     payload = createRenderPayloadNode(
       wormhole.elm, // 此时新 chip 还未 commit 到 dom，因此获取不到实际的 element 元素
       null,
@@ -894,7 +912,14 @@ export function reconcileProps(
     }
 
     if (propName in oldProps) {
-      if (value !== oldProps[propName]) {
+      let oldValue = oldProps[propName]
+      if (isFunction(oldValue)) {
+        // 对应的新属性会重新收集渲染副作用，因此旧属性对应的 effect 须释放
+        cacheAbandonedEffect(oldValue.effect, chipRoot)
+      }
+      // 获取旧属性值的字面量
+      oldValue = getPropLiteralValue(oldValue)
+      if (value !== oldValue) {
         ret[propName] = value
       }
     } else {
@@ -908,10 +933,47 @@ export function reconcileProps(
       continue
     }
 
+    const value: ChipPropValue = oldProps[propName]
+    if (isFunction(value)) {
+      cacheAbandonedEffect(value.effect, chipRoot)
+    }
+
     ret[propName] = PROP_TO_DELETE
   }
 
   return ret
+}
+
+/**
+ * 将已失效的 effect 缓存到 chipRoot
+ * @param effect 
+ * @param chipRoot 
+ */
+export function cacheAbandonedEffect(
+  effect: Effect | Effect[],
+  chipRoot: ChipRoot
+): Effect | Effect[] {
+  if (isArray(effect)) {
+    for (let i = 0; i < effect.length; i++) {
+      cacheAbandonedEffect(effect[i], chipRoot)
+    }
+  } else {
+    const effects = chipRoot.abandonedEffects
+    const effectNode: ChipEffectUnit = {
+      effect,
+      next: null
+    }
+    if (effects) {
+      effects.last = effects.last.next = effectNode
+    } else {
+      chipRoot.abandonedEffects = {
+        first: effectNode,
+        last: effectNode
+      }
+    }
+  }
+
+  return effect
 }
 
 /**

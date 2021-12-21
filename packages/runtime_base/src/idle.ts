@@ -1,4 +1,4 @@
-import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot } from "./chip";
+import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot, ChipEffectUnit } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend, isFunction } from "../../share/src";
 
@@ -20,6 +20,8 @@ export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function):
         if (isFunction(onIdleCompleted)) {
           onIdleCompleted()
         }
+        // 清空闲时任务队列
+        chipRoot.idleJobs = null
         return null
       }
     } catch (e) {
@@ -37,7 +39,12 @@ export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function):
     }
   }
 
-  return idleJobPerformingUnit.bind(null, chipRoot.idleJobs.first.job)
+  // 卸载缓存的已失效 effects
+  teardownAbandonedEffects(chipRoot)
+  // 清除已废弃 effect 缓存
+  chipRoot.abandonedEffects = null
+  // 执行第一个闲时任务，并返回下一个要执行的闲时任务
+  return idleJobPerformingUnit(chipRoot.idleJobs?.first)
 }
 
 // 用 reconcile 阶段新生成的 chip 子树更新 chip 局部子树，并清理过期状态
@@ -73,13 +80,6 @@ export function updateChipContext(
  * @param context 
  */
 export function removeChipContext(context: Chip, lastContext: Chip): void {
-  let currentEffect = context.effects
-  while (currentEffect !== null) {
-    // 将当前 effect 从依赖仓库中卸载
-    teardownEffect(currentEffect.effect)
-    currentEffect = currentEffect.next
-  }
-
   // 将 chip context 从树中移除
   if (lastContext === context.parent) {
     context.parent.firstChild = context.prevSibling
@@ -107,7 +107,7 @@ export function insertChipContext(context: Chip, anchorContext: Chip, isLast: bo
   return context
 }
 
-export function updateRefs(chip: Chip): Chip {
+export function updateRefs(chip: Chip): void {
 
 }
 
@@ -132,4 +132,17 @@ export function cacheIdleJob(job: Function, chipRoot: ChipRoot): Function {
   }
 
   return job
+}
+
+/**
+ * idle 阶段将本轮 reconcile 缓存的无效 effect 进行集中卸载
+ * @param chipRoot 
+ */
+export function teardownAbandonedEffects(chipRoot: ChipRoot): void {
+  const effects = chipRoot.abandonedEffects
+  let currentUnit: ChipEffectUnit = effects.first
+  while (currentUnit !== null) {
+    teardownEffect(currentUnit.effect)
+    currentUnit = currentUnit.next
+  }
 }

@@ -23,6 +23,7 @@ import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectBuffer";
+import { ListAccessor } from "../../share/src/shareTypes";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -882,6 +883,7 @@ export function genRenderPayloadsForDeletions(deletions: Chip[], chipRoot: ChipR
       deletion
     )
     cacheRenderPayload(payload, chipRoot)
+    cacheAbandonedEffect(deletion.effects?.first, chipRoot)
   }
 }
 
@@ -950,17 +952,26 @@ export function reconcileProps(
  * @param chipRoot 
  */
 export function cacheAbandonedEffect(
-  effect: Effect | Effect[],
+  effect: Effect | Effect[] | ChipEffectUnit,
   chipRoot: ChipRoot
-): Effect | Effect[] {
+): Effect | Effect[] | ChipEffectUnit {
   if (isArray(effect)) {
+    // 缓存 effect 数组
     for (let i = 0; i < effect.length; i++) {
       cacheAbandonedEffect(effect[i], chipRoot)
     }
+  } else if (effect.next) {
+    // 缓存 effect 链表
+    let currentUnit = (effect as ChipEffectUnit)
+    while (currentUnit !== null) {
+      cacheAbandonedEffect(currentUnit.effect, chipRoot)
+      currentUnit = currentUnit.next
+    }
   } else {
+    // single effect
     const effects = chipRoot.abandonedEffects
     const effectNode: ChipEffectUnit = {
-      effect,
+      effect: (effect as Effect),
       next: null
     }
     if (effects) {

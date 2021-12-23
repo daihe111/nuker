@@ -24,7 +24,7 @@ export type ChipPropValue = DynamicValueGetter | StaticValue
 
 export type ChipProps = Record<string, ChipPropValue>
 
-export type ChipChildren = Chip | Chip[] | ChildrenRenderer | null
+export type ChipChildren = | Chip | Chip[] | ChildrenRenderer
 
 export const enum ChipFlags {
   IS_CHIP = '__n_isChip',

@@ -31,8 +31,8 @@ export interface ReconcileChipPair {
 }
 
 export interface ChildrenRenderer {
-  source: any
-  render: (source: any) => ChipChildren
+  source?: any
+  render: (source?: any) => ChipChildren
 }
 
 export interface DynamicRenderData {
@@ -284,8 +284,7 @@ export function initRenderWorkForElement(chip: Chip) {
 //   return source[sourceKey[0]] === 1 ? <A /> : (source[sourceKey[1]] === 2 ? <B /> : <C />)
 // }
 export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): void {
-  const { render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-  createRenderEffectForCondition(chip, chipRoot, render)
+  initConditionChip(chip, chipRoot)
 }
 
 // 初始化可遍历类型节点的渲染工作
@@ -299,72 +298,7 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
 //   下发生值变化的数据所对应的 dom 结构一定是稳定的，无需特殊处理
 // for-chip 编译出的渲染器
 export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): void {
-  const {
-    source, // 响应式数据源
-    sourceKey, // 如果存在父级数据源，则当前 iterable chip 需要通过 sourceKey 访问可遍历源数据
-    render // 模板渲染器
-  } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-
-  // 创建源数据一级子元素的渲染 effect 并收集
-  function genEffectOfSon(source: object, key: string, render: Function): Chip {
-    let ret: Chip
-    let lastChildren: Chip
-    const e = effect<DynamicRenderData>(() => {
-      ret = render(source[key])
-      return { children: ret }
-    }, (newData: DynamicRenderData, ctx: Effect) => {
-      const children: Chip = (newData.children as Chip)
-      performReconcileWork(lastChildren, children, chipRoot, ctx[RenderEffectFlags.END_IN_LOOP])
-      lastChildren = children
-    }, {
-      lazy: true,
-      collectWhenLazy: true,
-      scheduler: pushRenderEffectToBuffer,
-      effectType: RenderEffectTypes.NEED_SCHEDULE
-    })
-
-    cacheEffectToChip(e, ret)
-    return ret
-  }
-
-  if (sourceKey) {
-    // 数据源为从属于上级响应式数据源的响应式数据，因此该数据源可被
-    // 完全改变 (引用级)，数据源引用改变后需要根据新的数据源生成 chip
-    // 片段，并对新旧 chip 片段进行 reconcile
-    const e = effect<DynamicRenderData>(() => {
-      const children: Chip[] = []
-      const src = source[sourceKey as any]
-      for (const key in (src as object)) {
-        children.push(genEffectOfSon(src, key, render))
-      }
-      // 更新 chip 对应的 children，以便进行子代 chip 的深度遍历
-      chip.children = children
-      return { children }
-    }, (newData: DynamicRenderData, ctx: Effect) => {
-      // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
-      return genReconcileEffects(
-        chip,
-        chipRoot,
-        newData,
-        ctx[RenderEffectFlags.END_IN_LOOP]
-      )
-    }, {
-      lazy: true,
-      collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
-      scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
-      effectType: RenderEffectTypes.NEED_SCHEDULE
-    })
-
-    cacheEffectToChip(e, chip)
-  } else {
-    // 仅数据源本身为响应式数据，因此数据源自身无法被直接修改，仅
-    // 需要对子代数据进行依赖收集
-    const children: Chip[] = []
-    for (const key in (source as object)) {
-      children.push(genEffectOfSon(source, key, render))
-    }
-    chip.children = children
-  }
+  initIterableChip(chip, chipRoot)
 }
 
 // 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
@@ -488,7 +422,7 @@ export function createRenderEffectForProp(
  * @param chipRoot 
  * @param render 
  */
-export function createRenderEffectForCondition(
+export function createRenderEffectForConditionChip(
   chip: Chip,
   chipRoot: ChipRoot,
   render: VirtualChipRender
@@ -513,6 +447,83 @@ export function createRenderEffectForCondition(
 
   cacheEffectToChip(e, chip)
   return e
+}
+
+/**
+ * 创建可迭代 chip 节点对应的渲染副作用
+ * @param chip 
+ * @param chipRoot 
+ * @param render 
+ * @param source 
+ * @param sourceKey 
+ */
+export function createRenderEffectForIterableChip(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  render: VirtualChipRender,
+  source: object,
+  sourceKey: unknown
+): void {
+  // 创建源数据一级子元素的渲染 effect 并收集
+  function genEffectOfSon(source: object, key: string, render: Function): Chip {
+    let ret: Chip
+    let lastChildren: Chip
+    const e = effect<DynamicRenderData>(() => {
+      ret = render(source[key])
+      return { children: ret }
+    }, (newData: DynamicRenderData, ctx: Effect) => {
+      const children: Chip = (newData.children as Chip)
+      performReconcileWork(lastChildren, children, chipRoot, ctx[RenderEffectFlags.END_IN_LOOP])
+      lastChildren = children
+    }, {
+      lazy: true,
+      collectWhenLazy: true,
+      scheduler: pushRenderEffectToBuffer,
+      effectType: RenderEffectTypes.NEED_SCHEDULE
+    })
+
+    cacheEffectToChip(e, ret)
+    return ret
+  }
+
+  if (sourceKey) {
+    // 数据源为从属于上级响应式数据源的响应式数据，因此该数据源可被
+    // 完全改变 (引用级)，数据源引用改变后需要根据新的数据源生成 chip
+    // 片段，并对新旧 chip 片段进行 reconcile
+    const e = effect<DynamicRenderData>(() => {
+      const children: Chip[] = []
+      const src = source[sourceKey as any]
+      for (const key in (src as object)) {
+        children.push(genEffectOfSon(src, key, render))
+      }
+      // 更新 chip 对应的 children，以便进行子代 chip 的深度遍历
+      chip.children = children
+      return { children }
+    }, (newData: DynamicRenderData, ctx: Effect) => {
+      // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
+      return genReconcileEffects(
+        chip,
+        chipRoot,
+        newData,
+        ctx[RenderEffectFlags.END_IN_LOOP]
+      )
+    }, {
+      lazy: true,
+      collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
+      scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
+      effectType: RenderEffectTypes.NEED_SCHEDULE
+    })
+
+    cacheEffectToChip(e, chip)
+  } else {
+    // 仅数据源本身为响应式数据，因此数据源自身无法被直接修改，仅
+    // 需要对子代数据进行依赖收集
+    const children: Chip[] = []
+    for (const key in (source as object)) {
+      children.push(genEffectOfSon(source, key, render))
+    }
+    chip.children = children
+  }
 }
 
 /**
@@ -703,6 +714,7 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
   if (isSkipReconcile(chip)) {
     nextChip = completeReconcile(chip, lastChip, chipRoot, true)
   } else {
+    initVirtualChip(chip, chipRoot)
     const { children, wormhole } = chip
     const lastChild: Chip = getLastChipChild(children)
 
@@ -789,6 +801,51 @@ export function completeReconcile(
     // 回溯，以当前节点的父节点作为下一个待处理的 chip 节点
     return chip.parent
   }
+}
+
+/**
+ * 初始化内部渲染内容不确定的 chip 节点
+ * 初始化阶段通过 render 渲染器生成实际的 children，
+ * 并创建渲染副作用同时进行依赖收集
+ * @param chip 
+ * @param chipRoot 
+ */
+export function initVirtualChip(chip: Chip, chipRoot: ChipRoot): Chip {
+  const { chipType, wormhole } = chip
+  if (chipType === ChipTypes.CONDITION) {
+    // 条件节点
+    initConditionChip(chip, chipRoot)
+  } else if (chipType === ChipTypes.FRAGMENT) {
+    // 可迭代节点
+    initIterableChip(chip, chipRoot)
+  } else {
+    // do nothing
+  }
+
+  // 卸载当前 chip 对应的旧 chip (相似节点) 上的 effects，当前
+  // chip 初始化时会重新对新的动态数据进行渲染副作用收集
+  if (wormhole) {
+    cacheAbandonedEffect(wormhole.effects?.first, chipRoot)
+  }
+
+  return chip
+}
+
+export function initConditionChip(chip: Chip, chipRoot: ChipRoot): Chip {
+  const { render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
+  createRenderEffectForConditionChip(chip, chipRoot, render)
+  return chip
+}
+
+export function initIterableChip(chip: Chip, chipRoot: ChipRoot): Chip {
+  const {
+    source, // 响应式数据源
+    sourceKey, // 如果存在父级数据源，则当前 iterable chip 需要通过 sourceKey 访问可遍历源数据
+    render // 模板渲染器
+  } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
+  createRenderEffectForIterableChip(chip, chipRoot, render, source, sourceKey)
+
+  return chip
 }
 
 // 建立 chip 子节点之间的映射关系，但不引入其他副作用，生成 render payload

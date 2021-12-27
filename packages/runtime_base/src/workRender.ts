@@ -670,6 +670,10 @@ export function registerOngoingReconcileWork(
           replaceChipContext.bind(null, chip, chip.wormhole, pointer),
           chipRoot
         )
+
+        // 返回处理下一组 chip 节点的子任务
+        const next: Chip = reconcile(chip, lastChip, chipRoot)
+        return reconcileJob.bind(null, next, chip, chipRoot)
       } else {
         // reconcile 执行完毕，如需执行 commit 任务，则返回 commit
         // 子任务，否则当前任务返回 null 标记执行完毕
@@ -680,17 +684,9 @@ export function registerOngoingReconcileWork(
       const next: Chip = reconcile(chip, lastChip, chipRoot)
       return reconcileJob.bind(null, next, chip)
     }
-
-    const next: Chip = reconcile(chip, lastChip, chipRoot)
-    // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
-    if (next !== originalChip) {
-      return reconcileJob.bind(null, next, chip)
-    } else {
-      return (needCommit ? performCommitWork.bind(null, chipRoot) : null)
-    }
   }
 
-  registerJob(reconcileJob.bind(null, chip, lastChip))
+  registerJob(reconcileJob.bind(null, chip))
 }
 
 /**

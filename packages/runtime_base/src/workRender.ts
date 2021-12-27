@@ -12,7 +12,8 @@ import {
   ChipEffectUnit,
   StaticValue,
   ChipPropValue,
-  getPropLiteralValue
+  getPropLiteralValue,
+  getPointerChip
 } from "./chip";
 import { isArray, isFunction, createEmptyObject } from "../../share/src";
 import { registerJob } from "./scheduler";
@@ -24,6 +25,7 @@ import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from ".
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectBuffer";
 import { ListAccessor } from "../../share/src/shareTypes";
+import { cacheIdleJob, replaceChipContext } from "./idle";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -659,6 +661,26 @@ export function registerOngoingReconcileWork(
   const originalChip: Chip = chip
   // 待注册进 scheduler 中的节点 reconcile 任务
   function reconcileJob(chip: Chip, lastChip: Chip): Function {
+    // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
+    if (chip === originalChip) {
+      // 处理起始 chip 节点
+      if (chip.phase === ChipPhases.PENDING) {
+        const pointer: Chip = getPointerChip(chip.wormhole)
+        cacheIdleJob(
+          replaceChipContext.bind(null, chip, chip.wormhole, pointer),
+          chipRoot
+        )
+      } else {
+        // reconcile 执行完毕，如需执行 commit 任务，则返回 commit
+        // 子任务，否则当前任务返回 null 标记执行完毕
+        return (needCommit ? performCommitWork.bind(null, chipRoot) : null)
+      }
+    } else {
+      // 处理起始节点的子代节点
+      const next: Chip = reconcile(chip, lastChip, chipRoot)
+      return reconcileJob.bind(null, next, chip)
+    }
+
     const next: Chip = reconcile(chip, lastChip, chipRoot)
     // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
     if (next !== originalChip) {
@@ -668,7 +690,7 @@ export function registerOngoingReconcileWork(
     }
   }
 
-  registerJob(reconcileJob.bind(null, chip))
+  registerJob(reconcileJob.bind(null, chip, lastChip))
 }
 
 /**
@@ -831,12 +853,22 @@ export function initVirtualChip(chip: Chip, chipRoot: ChipRoot): Chip {
   return chip
 }
 
+/**
+ * 初始化条件 chip 节点
+ * @param chip 
+ * @param chipRoot 
+ */
 export function initConditionChip(chip: Chip, chipRoot: ChipRoot): Chip {
   const { render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
   createRenderEffectForConditionChip(chip, chipRoot, render)
   return chip
 }
 
+/**
+ * 初始化可迭代 chip 节点
+ * @param chip 
+ * @param chipRoot 
+ */
 export function initIterableChip(chip: Chip, chipRoot: ChipRoot): Chip {
   const {
     source, // 响应式数据源

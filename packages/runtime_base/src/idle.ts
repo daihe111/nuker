@@ -107,6 +107,32 @@ export function insertChipContext(context: Chip, anchorContext: Chip, isLast: bo
   return context
 }
 
+/**
+ * 替换 chip 树中的指定 chip 节点
+ * @param newContext 
+ * @param oldContext 
+ * @param anchorContext 
+ */
+export function replaceChipContext(
+  newContext: Chip,
+  oldContext: Chip,
+  anchorContext: Chip
+): Chip {
+  if (oldContext.parent === anchorContext) {
+    // 子节点中的最后一个节点
+    anchorContext.lastChild = newContext
+    newContext.parent = anchorContext
+    newContext.prevSibling = oldContext.prevSibling
+  } else {
+    // 非子节点中的最后一个节点
+    anchorContext.prevSibling = newContext
+    newContext.prevSibling = oldContext.prevSibling
+    newContext.parent = anchorContext.parent
+  }
+
+  return newContext
+}
+
 export function updateRefs(chip: Chip): void {
 
 }

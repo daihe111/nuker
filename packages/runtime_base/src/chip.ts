@@ -217,6 +217,15 @@ export function isLastChipChild(chip: Chip, children: ChipChildren): boolean {
   return (getLastChipChild(children) === chip)
 }
 
+/**
+ * chip 节点是否为指定 chip 的最后一个子节点
+ * @param child 
+ * @param parent 
+ */
+export function isLastChildOfChip(child: Chip, parent: Chip): boolean {
+  return (child.parent.lastChild === child)
+}
+
 export function createChip(
   tag: ChipTag,
   props?: ChipProps,
@@ -249,4 +258,23 @@ export function createChip(
  */
 export function getPropLiteralValue(valueContainer: ChipPropValue): StaticValue {
   return isFunction(valueContainer) ? valueContainer.value : valueContainer
+}
+
+/**
+ * 获取 chip 链表树中指向指定 chip 的 chip 节点
+ * @param chip 
+ */
+export function getPointerChip(chip: Chip): Chip {
+  const parent: Chip = chip.parent
+  if (isLastChildOfChip(chip, parent)) {
+    return parent
+  } else {
+    const children = (parent.children as Chip[])
+    for (let i = 0; i < children.length; i++) {
+      if (children[i].prevSibling === chip) {
+        return children[i]
+      }
+    }
+    return null
+  }
 }

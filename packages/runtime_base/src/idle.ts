@@ -47,6 +47,20 @@ export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function):
   return idleJobPerformingUnit(chipRoot.idleJobs?.first)
 }
 
+/**
+ * 同步方式执行 idle 阶段任务
+ * @param chipRoot 
+ */
+export function performIdleWorkSync(chipRoot: ChipRoot): void {
+  const idleJobs: IdleJobUnit = chipRoot.idleJobs?.first
+  let currentUnit: IdleJobUnit = idleJobs
+  while (currentUnit !== null) {
+    currentUnit.job()
+    currentUnit = currentUnit.next
+  }
+  chipRoot.idleJobs = null
+}
+
 // 用 reconcile 阶段新生成的 chip 子树更新 chip 局部子树，并清理过期状态
 // 该更新局部 chip 树的方法存在内存隐患，直接替换局部 chip 节点，但是旧的 chip
 // 包括其子代 chip 仍然会保持对全局 effect 的引用，因此旧 chip 对应的内存

@@ -95,11 +95,13 @@ export function flushBuffer(buffer: BufferNode): void {
     )
     // 如果是 buffer 中最后一个 effect 节点且为 concurrent 渲染模式，
     // 将其标记为当前 event loop 最后一个任务
-    injectIntoEffect(
-      effect,
-      RenderEffectFlags.END_IN_LOOP,
-      (currentNode.next === null)
-    )
+    if (currentNode.next === null) {
+      injectIntoEffect(
+        currentNode.effect,
+        RenderEffectFlags.END_IN_LOOP,
+        true
+      )
+    }
     // 执行渲染副作用
     effect()
     currentNode = head(popBuffer())

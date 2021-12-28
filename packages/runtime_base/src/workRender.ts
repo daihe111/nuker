@@ -15,7 +15,7 @@ import {
   getPropLiteralValue,
   getPointerChip
 } from "./chip";
-import { isArray, isFunction, createEmptyObject } from "../../share/src";
+import { isArray, isFunction, createEmptyObject, extend } from "../../share/src";
 import { registerJob } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
@@ -25,7 +25,7 @@ import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from ".
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectBuffer";
 import { ListAccessor } from "../../share/src/shareTypes";
-import { cacheIdleJob, replaceChipContext } from "./idle";
+import { cacheIdleJob, replaceChipContext, performIdleWork, performIdleWorkSync } from "./idle";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -368,6 +368,29 @@ export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Ch
 }
 
 /**
+ * 直接同步更新视图，同时缓存闲时任务，当满足条件时进入 idle 阶段执行相应的任务
+ * @param chip 
+ * @param chipRoot 
+ * @param props 
+ * @param needPerformIdle 
+ */
+export function patchMutationSync(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  props: object,
+  needPerformIdle: boolean
+): void {
+  commitProps(chip.elm, props)
+  cacheIdleJob(() => {
+    chip.props = extend(chip.props, props)
+  }, chipRoot)
+
+  if (needPerformIdle) {
+    performIdleWorkSync(chipRoot)
+  }
+}
+
+/**
  * 为动态属性容器设置对应的属性字面量
  * @param literal 
  * @param propContainer 
@@ -399,10 +422,10 @@ export function createRenderEffectForProp(
     return { props: { [propName]: literal } }
   }, (newData: DynamicRenderData, ctx: Effect) => {
     // dispatcher: 响应式数据更新后触发
-    const elm: Element = chip.wormhole?.elm
+    const isEndInLoop: boolean = ctx[RenderEffectFlags.END_IN_LOOP]
     return (ctx[RenderEffectFlags.RENDER_MODE] === RenderModes.SYNCHRONOUS ?
-      commitProps(elm, newData.props) :
-      genReconcileEffects(chip, chipRoot, newData))
+      patchMutationSync(chip, chipRoot, newData.props, isEndInLoop) :
+      genReconcileEffects(chip, chipRoot, newData, isEndInLoop))
   }, {
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑

@@ -107,6 +107,11 @@ export const enum CompileFlags {
   STATIC = 1 << 12,
 
   /**
+   * chip 子代结构是否稳定
+   */
+  STABLE_SUB_STRUCTURE = 1 << 13,
+
+  /**
    * Indicates a hoisted static vnode. This is a hint for hydration to skip
    * the entire sub tree since static content never needs to be updated.
    */

@@ -28,7 +28,8 @@ export type ChipChildren = | Chip | Chip[] | ChildrenRenderer
 
 export const enum ChipFlags {
   IS_CHIP = '__n_isChip',
-  IS_RECONCILE_SCOPE = '__n_isReconcileScope'
+  IS_RECONCILE_SCOPE = '__n_isReconcileScope',
+  MAY_SKIP = '__n_maySkip'
 }
 
 export interface ChipCore {
@@ -97,6 +98,7 @@ export interface Chip extends ChipCore {
   instance: ChipInstance | null
   directives?: unknown
   components?: unknown
+  maySkip?: boolean // chip 及其子代在 reconcile 阶段有可能被跳过
   // 当前已转化为 chip 的 Chip child 索引，用于辅助 chip 树
   // 遍历过程中动态创建新的 chip
   currentChildIndex?: number

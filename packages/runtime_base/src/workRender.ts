@@ -395,8 +395,8 @@ export function patchMutationSync(
  * @param literal 
  * @param propContainer 
  */
-export function setLiteralForProp(literal: StaticValue, propContainer: DynamicValueGetter): StaticValue {
-  propContainer.value = literal
+export function setLiteralForDynamicValue(literal: any, valueContainer: DynamicValueGetter): any {
+  valueContainer.value = literal
   return literal
 }
 
@@ -418,7 +418,7 @@ export function createRenderEffectForProp(
     // collector: 触发当前注册 effect 的收集行为
     // 执行动态属性取值器获取属性字面量
     literal = value()
-    setLiteralForProp(literal, value)
+    setLiteralForDynamicValue(literal, value)
     return { props: { [propName]: literal } }
   }, (newData: DynamicRenderData, ctx: Effect) => {
     // dispatcher: 响应式数据更新后触发
@@ -486,69 +486,42 @@ export function createRenderEffectForIterableChip(
   chip: Chip,
   chipRoot: ChipRoot,
   render: VirtualChipRender,
-  source: object,
-  sourceKey: unknown
+  sourceGetter: DynamicValueGetter
 ): void {
-  // 创建源数据一级子元素的渲染 effect 并收集
-  function genEffectOfSon(source: object, key: string, render: Function): Chip {
-    let ret: Chip
-    let lastChildren: Chip
-    const e = effect<DynamicRenderData>(() => {
-      ret = render(source[key])
-      return { children: ret }
-    }, (newData: DynamicRenderData, ctx: Effect) => {
-      const children: Chip = (newData.children as Chip)
-      performReconcileWork(lastChildren, children, chipRoot, ctx[RenderEffectFlags.END_IN_LOOP])
-      lastChildren = children
-    }, {
-      lazy: true,
-      collectWhenLazy: true,
-      scheduler: pushRenderEffectToBuffer,
-      effectType: RenderEffectTypes.NEED_SCHEDULE
-    })
-
-    cacheEffectToChip(e, ret)
-    return ret
-  }
-
-  if (sourceKey) {
-    // 数据源为从属于上级响应式数据源的响应式数据，因此该数据源可被
-    // 完全改变 (引用级)，数据源引用改变后需要根据新的数据源生成 chip
-    // 片段，并对新旧 chip 片段进行 reconcile
-    const e = effect<DynamicRenderData>(() => {
-      const children: Chip[] = []
-      const src = source[sourceKey as any]
-      for (const key in (src as object)) {
-        children.push(genEffectOfSon(src, key, render))
-      }
-      // 更新 chip 对应的 children，以便进行子代 chip 的深度遍历
-      chip.children = children
-      return { children }
-    }, (newData: DynamicRenderData, ctx: Effect) => {
-      // TODO 生成 chip 更新任务并缓存，等待 idle 阶段执行
-      return genReconcileEffects(
-        chip,
-        chipRoot,
-        newData,
-        ctx[RenderEffectFlags.END_IN_LOOP]
-      )
-    }, {
-      lazy: true,
-      collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
-      scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
-      effectType: RenderEffectTypes.NEED_SCHEDULE
-    })
-
-    cacheEffectToChip(e, chip)
-  } else {
-    // 仅数据源本身为响应式数据，因此数据源自身无法被直接修改，仅
-    // 需要对子代数据进行依赖收集
+  const e = effect<DynamicRenderData>(() => {
     const children: Chip[] = []
-    for (const key in (source as object)) {
-      children.push(genEffectOfSon(source, key, render))
+    const sourceLiteral: object = sourceGetter()
+
+    if (sourceLiteral === sourceGetter.value) {
+      // 可迭代数据源本身不会变
+
+    } else {
+      // 可迭代数据源本身发生引用级变化
+
+    }
+    setLiteralForDynamicValue(sourceLiteral, sourceGetter)
+    for (const key in sourceLiteral) {
+      const child: Chip = (render(sourceLiteral[key]) as Chip)
+      child.maySkip = (sourceLiteral === sourceGetter.value)
+      children.push(child)
     }
     chip.children = children
-  }
+    return { children }
+  }, (newData: DynamicRenderData, ctx: Effect) => {
+    return genReconcileEffects(
+      chip,
+      chipRoot,
+      newData,
+      ctx[RenderEffectFlags.END_IN_LOOP]
+    )
+  }, {
+    lazy: true,
+    collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
+    scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
+    effectType: RenderEffectTypes.NEED_SCHEDULE
+  })
+
+  cacheEffectToChip(e, chip)
 }
 
 /**
@@ -717,6 +690,15 @@ export function registerOngoingReconcileWork(
  * @param chip
  */
 export function isSkipReconcile(chip: Chip): boolean {
+  // chip reconcile 跳过的条件，满足其一即可 (|):
+  // 1. 节点本身为静态，且距离当前节点最近的 chip block 具有稳定的子代结构
+  // 2. 可迭代数据生成的相似节点对 (key 相同代表对应数据源未发生变化)，且可迭代数据源本身无引用级变化
+  return Boolean(
+    ((chip.compileFlags & CompileFlags.STATIC) &&
+    (currentRenderingInstance.chip.compileFlags & CompileFlags.STABLE_SUB_STRUCTURE)) ||
+    (chip.maySkip && chip.wormhole)
+  )
+
   const { compileFlags } = chip
   const isStatic = compileFlags & CompileFlags.STATIC
   return (isStatic && currentRenderingInstance.chip?.chipType !== ChipTypes.CONDITION)

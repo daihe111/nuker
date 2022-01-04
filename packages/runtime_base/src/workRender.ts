@@ -695,13 +695,9 @@ export function isSkipReconcile(chip: Chip): boolean {
   // 2. 可迭代数据生成的相似节点对 (key 相同代表对应数据源未发生变化)，且可迭代数据源本身无引用级变化
   return Boolean(
     ((chip.compileFlags & CompileFlags.STATIC) &&
-    (currentRenderingInstance.chip.compileFlags & CompileFlags.STABLE_SUB_STRUCTURE)) ||
+    (currentRenderingInstance.chip.compileFlags & CompileFlags.PREDICTABLE)) ||
     (chip.maySkip && chip.wormhole)
   )
-
-  const { compileFlags } = chip
-  const isStatic = compileFlags & CompileFlags.STATIC
-  return (isStatic && currentRenderingInstance.chip?.chipType !== ChipTypes.CONDITION)
 }
 
 // 每个 chip 节点对的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复

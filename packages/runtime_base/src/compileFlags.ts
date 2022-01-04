@@ -107,9 +107,26 @@ export const enum CompileFlags {
   STATIC = 1 << 12,
 
   /**
-   * chip 子代结构是否稳定
+   * 渲染块 (block) flags
+   * 可以作为一个渲染块的渲染区域如下:
+   * 1. 组件 2. 条件、可迭代节点 3. 其他具有独立上下文环境的特殊节点
    */
-  STABLE_SUB_STRUCTURE = 1 << 13,
+
+  /**
+   * 子代结构不可预测的 chip，如条件节点，你完全无法预测不同条件下会渲染出什么样的子代结构
+   */
+  UNPREDICTABLE = 1 << 13,
+
+  /**
+   * 子代结构不完全可预测的 chip
+   * 如可迭代节点就是部分可预测的，其整体结构可变，但是每一个 item 的渲染结构是相同的
+   */
+  INCOMPLETE_PREDICTABLE = 1 << 14,
+
+  /**
+   * 自带结构完全可预测的 chip
+   */
+  PREDICTABLE = 1 << 15,
 
   /**
    * Indicates a hoisted static vnode. This is a hint for hydration to skip

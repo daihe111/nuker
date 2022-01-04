@@ -28,6 +28,8 @@ export const enum RenderEffectFlags {
 let buffer: BufferNode = null
 let isPending: boolean = false // buffer 是否处于准备态
 let isRunning: boolean = false // buffer 是否处于执行态
+// 缓冲区当前已存在 effect 缓存记录
+const effectCache: WeakMap<Effect, true> = new WeakMap()
 
 export function pushRenderEffectToBuffer(effect: Effect): void {
   pushBuffer(effect)
@@ -40,21 +42,38 @@ export function pushRenderEffectToBuffer(effect: Effect): void {
 
 // effect 推入缓冲区
 function pushBuffer(effect: Effect): BufferNode {
+  if (hasCache(effect)) {
+    return null
+  }
+
   const bufferNode: BufferNode = createBufferNode(effect)
   if (buffer) {
     buffer.next = bufferNode
   } else {
     buffer = bufferNode
   }
+  cache(effect)
   return buffer
 }
 
 // 缓冲区队头节点出队
 function popBuffer(): BufferNode {
-  const oldRoot: BufferNode = buffer
+  const oldBuffer: BufferNode = buffer
   buffer = buffer?.next || null
-  oldRoot.effect = oldRoot.next = null
+  removeCache(oldBuffer.effect)
   return buffer
+}
+
+function cache(effect: Effect): void {
+  effectCache.set(effect, true)
+}
+
+function removeCache(effect: Effect): void {
+  effectCache.delete(effect)
+}
+
+function hasCache(effect: Effect): boolean {
+  return effectCache.has(effect)
 }
 
 // 返回队头节点

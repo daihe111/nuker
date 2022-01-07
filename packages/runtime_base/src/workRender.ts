@@ -26,6 +26,7 @@ import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectBuffer";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { cacheIdleJob, replaceChipContext, performIdleWork, performIdleWorkSync } from "./idle";
+import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -83,7 +84,7 @@ export const enum RenderUpdateTypes {
 }
 
 // 当前正在执行渲染工作的组件 instance
-let currentRenderingInstance: ComponentInstance = null
+export let currentRenderingInstance: ComponentInstance = null
 let currentRenderMode: number
 const renderModeStack: number[] = []
 
@@ -122,16 +123,16 @@ export function popRenderMode(): number {
   return currentRenderMode
 }
 
-// 同步执行任务循环
-export function workLoopSync(chipRoot: ChipRoot, chip: Chip) {
+// 同步执行渲染任务
+export function performRenderSync(chipRoot: ChipRoot, chip: Chip) {
   let ongoingChip = chip
   while (ongoingChip !== null) {
     ongoingChip = performChipWork(chipRoot, ongoingChip, RenderModes.SYNCHRONOUS)
   }
 }
 
-// 以异步可调度的方式执行任务循环
-export function workLoopConcurrent(chipRoot: ChipRoot, chip: Chip) {
+// 以异步可调度的方式执行渲染任务
+export function performRenderConcurrent(chipRoot: ChipRoot, chip: Chip) {
   registerOngoingChipWork(chipRoot, chip)
 }
 
@@ -261,12 +262,17 @@ export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) 
 
 // 初始化 component 类型节点的渲染工作
 export function initRenderWorkForComponent(chip: Chip): void {
-  const { source, render } = (chip.instance as ComponentInstance) = createComponentInstance((chip.tag as Component), chip)
+  const instance: ComponentInstance = createComponentInstance((chip.tag as Component), chip)
+  const { source, render } = chip.instance = instance
+  // 执行组件的 init 生命周期，此时只能访问到组件实例
+  invokeLifecycle(LifecycleHooks.INIT, instance)
   // 此处仅通过 render 渲染器获取组件节点的子节点，不做响应式系统的依赖收集
   disableCollecting()
   chip.children = render(source)
   // 恢复响应式系统的依赖收集
   enableCollecting()
+  // 触发 willMount 生命周期，此刻为执行组件渲染挂载工作前的最后时机
+  invokeLifecycle(LifecycleHooks.WILL_MOUNT, instance)
 }
 
 // 初始化 nuker 内置 component 类型节点的渲染工作
@@ -340,7 +346,8 @@ export function completeRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoo
 
 // 完成 component 类型节点的渲染工作: 当前节点插入父 dom 容器
 export function completeRenderWorkForComponent(chip: Chip) {
-
+  // 执行 mounted 生命周期，此时组件已执行完自身的渲染挂载工作
+  invokeLifecycle(LifecycleHooks.MOUNTED, (chip.instance as ComponentInstance))
 }
 
 // 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)

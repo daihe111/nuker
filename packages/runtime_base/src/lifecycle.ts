@@ -1,6 +1,7 @@
 import { ComponentInstance, LifecycleUnit } from "./component";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { disableCollecting, enableCollecting } from "../../reactivity/src/effect";
+import { currentRenderingInstance } from './workRender'
 
 export const LifecycleHooks = {
   INIT: '__n_i',
@@ -9,7 +10,8 @@ export const LifecycleHooks = {
   WILL_UPDATE: '__n_wu',
   UPDATED: '__n_u',
   WILL_UNMOUNT: '__n_wum',
-  UNMOUNTED: '__n_um'
+  UNMOUNTED: '__n_um',
+  CATCH: '__n_c'
 }
 
 /**
@@ -54,6 +56,63 @@ export function registerLifecycleHook(
   }
 }
 
-export function invokeLifecycle(key: string, instance: ComponentInstance): void {
-  instance
+export function init(
+  hook: Function,
+  instance: ComponentInstance = currentRenderingInstance
+): void {
+  registerLifecycleHook(instance, LifecycleHooks.INIT, hook)
+}
+
+export function willMount(
+  hook: Function,
+  instance: ComponentInstance = currentRenderingInstance
+): void {
+  registerLifecycleHook(instance, LifecycleHooks.WILL_MOUNT, hook)
+}
+
+export function mounted(
+  hook: Function,
+  instance: ComponentInstance = currentRenderingInstance
+): void {
+  registerLifecycleHook(instance, LifecycleHooks.MOUNTED, hook)
+}
+
+export function willUpdate(
+  hook: Function,
+  instance: ComponentInstance = currentRenderingInstance
+): void {
+  registerLifecycleHook(instance, LifecycleHooks.WILL_UPDATE, hook)
+}
+
+export function updated(
+  hook: Function,
+  instance: ComponentInstance = currentRenderingInstance
+): void {
+  registerLifecycleHook(instance, LifecycleHooks.UPDATED, hook)
+}
+
+export function willUnmount(
+  hook: Function,
+  instance: ComponentInstance = currentRenderingInstance
+): void {
+  registerLifecycleHook(instance, LifecycleHooks.WILL_UNMOUNT, hook)
+}
+
+export function unmounted(
+  hook: Function,
+  instance: ComponentInstance = currentRenderingInstance
+): void {
+  registerLifecycleHook(instance, LifecycleHooks.UNMOUNTED, hook)
+}
+
+export function invokeLifecycle(
+  hookName: string,
+  instance: ComponentInstance = currentRenderingInstance
+): void {
+  const hooks: ListAccessor<LifecycleUnit> = instance[hookName]
+  let currentUnit: LifecycleUnit = hooks.first
+  while (currentUnit !== null) {
+    currentUnit.hook()
+    currentUnit = currentUnit.next
+  }
 }

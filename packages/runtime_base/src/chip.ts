@@ -8,6 +8,7 @@ import { isObject, isArray, isString, isNumber, isFunction } from '../../share/s
 import { RenderPayloadNode, ChildrenRenderer } from "./workRender";
 import { VirtualInstance, VirtualOptions } from "./virtualChip";
 import { ListAccessor } from "../../share/src/shareTypes";
+import { LifecycleHookCache } from "./lifecycle";
 
 export type ChipTag = | string | Component | VirtualOptions
 
@@ -136,6 +137,10 @@ export interface ChipRoot extends Chip {
   abandonedEffects: ListAccessor<ChipEffectUnit>
   // chip 树结构是否稳定
   isStable: boolean
+  // 生命周期缓存队列
+  hookCache: LifecycleHookCache
+  // UI 变化后生命周期的触发策略
+  mutableHookStrategy: number
 }
 
 let id = 0

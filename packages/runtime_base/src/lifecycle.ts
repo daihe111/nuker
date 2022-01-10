@@ -2,6 +2,17 @@ import { ComponentInstance, LifecycleUnit } from "./component";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { disableCollecting, enableCollecting } from "../../reactivity/src/effect";
 import { currentRenderingInstance } from './workRender'
+import { isFunction } from "../../share/src";
+import { ChipRoot } from "./chip";
+
+export interface LifecycleHookCache {
+  [key: string]: ListAccessor<LifecycleUnit>
+}
+
+export const enum HookInvokingStrategies {
+  ON_IDLE = 0, // 生命周期在空闲时触发 (默认策略)
+  IMMEDIATELY = 1 // 生命周期在组件自身执行完指定阶段的工作后立即触发
+}
 
 export const LifecycleHooks = {
   INIT: '__n_i',
@@ -22,13 +33,16 @@ export const LifecycleHooks = {
  * @param antecedent 
  */
 export function registerLifecycleHook(
-  instance: ComponentInstance,
+  instance: ComponentInstance | ChipRoot,
   hookName: string,
-  hook: Function,
+  hook: Function | LifecycleUnit,
   antecedent?: boolean
 ): void {
+  if (isFunction(hook)) {
+    
+  }
   const hooks: ListAccessor<LifecycleUnit> = instance[hookName]
-  const hookUnit: LifecycleUnit = {
+  const hookUnit: LifecycleUnit = isFunction(hook) ? {
     hook: (...args: any[]) => {
       disableCollecting()
       try {
@@ -39,7 +53,7 @@ export function registerLifecycleHook(
       enableCollecting()
     },
     next: null
-  }
+  } : hook
   if (hooks) {
     if (antecedent) {
       // 生命周期需要预先执行，因此需要插到队头
@@ -107,7 +121,7 @@ export function unmounted(
 
 export function invokeLifecycle(
   hookName: string,
-  instance: ComponentInstance = currentRenderingInstance
+  instance: ComponentInstance | ChipRoot = currentRenderingInstance
 ): void {
   const hooks: ListAccessor<LifecycleUnit> = instance[hookName]
   let currentUnit: LifecycleUnit = hooks.first

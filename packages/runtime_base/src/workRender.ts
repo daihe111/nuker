@@ -26,7 +26,7 @@ import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectBuffer";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { cacheIdleJob, replaceChipContext, performIdleWork, performIdleWorkSync } from "./idle";
-import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
+import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -129,6 +129,9 @@ export function performRenderSync(chipRoot: ChipRoot, chip: Chip) {
   while (ongoingChip !== null) {
     ongoingChip = performChipWork(chipRoot, ongoingChip, RenderModes.SYNCHRONOUS)
   }
+
+  // 批量执行当前渲染周期内缓存的所有生命周期
+  invokeLifecycle(LifecycleHooks.MOUNTED, chipRoot)
 }
 
 // 以异步可调度的方式执行渲染任务
@@ -345,9 +348,18 @@ export function completeRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoo
 }
 
 // 完成 component 类型节点的渲染工作: 当前节点插入父 dom 容器
-export function completeRenderWorkForComponent(chip: Chip) {
+export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot) {
   // 执行 mounted 生命周期，此时组件已执行完自身的渲染挂载工作
-  invokeLifecycle(LifecycleHooks.MOUNTED, (chip.instance as ComponentInstance))
+  if (chipRoot.mutableHookStrategy === HookInvokingStrategies.ON_IDLE) {
+    registerLifecycleHook(
+      chipRoot,
+      LifecycleHooks.MOUNTED,
+      chip.instance[LifecycleHooks.MOUNTED]
+    )
+  } else {
+    // 组件自身渲染完成后立即执行 mounted 生命周期
+    invokeLifecycle(LifecycleHooks.MOUNTED, (chip.instance as ComponentInstance))
+  }
 }
 
 // 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
@@ -357,7 +369,7 @@ export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): v
       completeRenderWorkForElement(chip, chipRoot)
       break
     case ChipTypes.CUSTOM_COMPONENT:
-      completeRenderWorkForComponent(chip)
+      completeRenderWorkForComponent(chip, chipRoot)
       break
     case ChipTypes.CONDITION:
       completeRenderWorkForConditionChip(chip, chipRoot)

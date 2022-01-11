@@ -1,6 +1,7 @@
 import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot, ChipEffectUnit } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend, isFunction } from "../../share/src";
+import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
 
 // idle 阶段批量执行 reconcile & commit 阶段产生的闲时任务，且任务支持调度系统的中断与恢复，
 // 以保证闲时任务不长时间执行阻塞主线程
@@ -22,6 +23,11 @@ export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function):
         }
         // 清空闲时任务队列
         chipRoot.idleJobs = null
+        // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
+        [LifecycleHooks.MOUNTED, LifecycleHooks.UPDATED].forEach((n: string) => {
+          invokeLifecycle(n, chipRoot)
+          chipRoot[n] = null
+        })
         return null
       }
     } catch (e) {

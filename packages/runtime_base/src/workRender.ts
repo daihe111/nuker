@@ -130,8 +130,9 @@ export function performRenderSync(chipRoot: ChipRoot, chip: Chip) {
     ongoingChip = performChipWork(chipRoot, ongoingChip, RenderModes.SYNCHRONOUS)
   }
 
-  // 批量执行当前渲染周期内缓存的所有生命周期
+  // 批量执行当前渲染周期内缓存的所有 mounted 生命周期
   invokeLifecycle(LifecycleHooks.MOUNTED, chipRoot)
+  chipRoot[LifecycleHooks.MOUNTED] = null
 }
 
 // 以异步可调度的方式执行渲染任务

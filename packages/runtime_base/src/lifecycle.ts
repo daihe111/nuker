@@ -5,25 +5,32 @@ import { currentRenderingInstance } from './workRender'
 import { isFunction } from "../../share/src";
 import { ChipRoot } from "./chip";
 
-export interface LifecycleHookCache {
-  [key: string]: ListAccessor<LifecycleUnit>
-}
-
 export const enum HookInvokingStrategies {
   ON_IDLE = 0, // 生命周期在空闲时触发 (默认策略)
   IMMEDIATELY = 1 // 生命周期在组件自身执行完指定阶段的工作后立即触发
 }
 
-export const LifecycleHooks = {
-  INIT: '__n_i',
-  WILL_MOUNT: '__n_wm',
-  MOUNTED: '__n_m',
-  WILL_UPDATE: '__n_wu',
-  UPDATED: '__n_u',
-  WILL_UNMOUNT: '__n_wum',
-  UNMOUNTED: '__n_um',
-  CATCH: '__n_c'
+export const enum LifecycleHooks {
+  INIT = '__n_i',
+  WILL_MOUNT = '__n_wm',
+  MOUNTED = '__n_m',
+  WILL_UPDATE = '__n_wu',
+  UPDATED = '__n_u',
+  WILL_UNMOUNT = '__n_wum',
+  UNMOUNTED = '__n_um',
+  CATCH = '__n_c'
 }
+
+export const LifecycleHookNames: string[] = [
+  LifecycleHooks.INIT,
+  LifecycleHooks.UNMOUNTED,
+  LifecycleHooks.MOUNTED,
+  LifecycleHooks.WILL_UPDATE,
+  LifecycleHooks.UPDATED,
+  LifecycleHooks.WILL_UNMOUNT,
+  LifecycleHooks.UNMOUNTED,
+  LifecycleHooks.CATCH
+]
 
 /**
  * 将指定的生命周期注册到组件实例上

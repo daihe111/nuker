@@ -745,6 +745,7 @@ export function reconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip 
  */
 export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip {
   chip.phase = ChipPhases.INITIALIZE
+  const componentInst: ComponentInstance = (chip.chipType === ChipTypes.CUSTOM_COMPONENT) ? (chip.instance as ComponentInstance) : null
 
   // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
   // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
@@ -758,6 +759,8 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
 
     if (!wormhole) {
       // 无对应旧 chip 节点，表示当前 chip 为待挂载节点
+      // 触发 init 生命周期
+      componentInst && invokeLifecycle(LifecycleHooks.INIT, componentInst)
       // 生成对应的 dom 容器创建 render payload
       const payload = createRenderPayloadNode(
         null,
@@ -775,8 +778,15 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
         }
       )
       cacheRenderPayload(payload, chipRoot)
+
+      // 触发 willMount 生命周期
+      componentInst && invokeLifecycle(LifecycleHooks.WILL_MOUNT, componentInst)
+    } else {
+      // 组件节点存在配对的相似节点，说明组件会做更新，因此触发 willMount 生命周期
+      componentInst && invokeLifecycle(LifecycleHooks.WILL_UPDATE, componentInst)
     }
 
+    // 获取下一个需要处理的 chip 节点
     if (lastChild) {
       chip.lastChild = lastChild
       lastChild.parent = chip
@@ -816,6 +826,28 @@ export function completeReconcile(
       genRenderPayloadsForDeletions(chip.deletions, chipRoot)
     }
     reconcileToGenRenderPayload(chip, auxiliaryChip, chipRoot)
+
+    // 缓存视图改变的生命周期 (mounted | updated)
+    if (chip.chipType === ChipTypes.CUSTOM_COMPONENT) {
+      const inst = (chip.instance as ComponentInstance)
+      if (chip.wormhole) {
+        // 组件类型节点存在旧的相似节点，走更新逻辑，缓存组件的 updated 
+        // 生命周期到全局生命周期缓存队列
+        registerLifecycleHook(
+          chipRoot,
+          LifecycleHooks.UPDATED,
+          inst[LifecycleHooks.UPDATED]?.first
+        )
+      } else {
+        // 组件类型节点无对应的相似节点，走挂载逻辑，缓存组件的 mounted
+        // 生命周期到全局生命周期缓存队列
+        registerLifecycleHook(
+          chipRoot,
+          LifecycleHooks.MOUNTED,
+          inst[LifecycleHooks.MOUNTED]?.first
+        )
+      }
+    }
   }
 
   // 获取下一个需要处理的 chip
@@ -850,14 +882,22 @@ export function completeReconcile(
  */
 export function initVirtualChip(chip: Chip, chipRoot: ChipRoot): Chip {
   const { chipType, wormhole } = chip
-  if (chipType === ChipTypes.CONDITION) {
-    // 条件节点
-    initConditionChip(chip, chipRoot)
-  } else if (chipType === ChipTypes.FRAGMENT) {
-    // 可迭代节点
-    initIterableChip(chip, chipRoot)
-  } else {
-    // do nothing
+  switch (chipType) {
+    case ChipTypes.CONDITION:
+      // 条件节点
+      initConditionChip(chip, chipRoot)
+      break
+    case ChipTypes.FRAGMENT:
+      // 可迭代节点
+      initIterableChip(chip, chipRoot)
+      break
+    case ChipTypes.CUSTOM_COMPONENT:
+      // 组件类型节点
+      const { source, render } = chip.instance = createComponentInstance((chip.tag as Component), chip)
+      disableCollecting()
+      chip.children = render(source)
+      enableCollecting()
+      break
   }
 
   // 卸载当前 chip 对应的旧 chip (相似节点) 上的 effects，当前

@@ -1,7 +1,7 @@
-import { Chip, ChipChildren } from "./chip";
-import { isObject, isFunction, createEmptyObject } from "../../share/src";
+import { Chip } from "./chip";
+import { isFunction, createEmptyObject } from "../../share/src";
 import { ListAccessor } from "../../share/src/shareTypes";
-import { LifecycleHooks } from "./lifecycle";
+import { LifecycleHooks, registerLifecycleHook, LifecycleHookNames } from "./lifecycle";
 
 export const enum ComponentTypes {
   OPTION = '__n_op', // 配置式组件
@@ -131,8 +131,9 @@ export function createComponentInstance(Component: Component, chipContainer: Chi
  */
 export function initLifecycleHooks(instance: ComponentInstance, source?: object): void {
   source = source || instance
-  for (const hook in LifecycleHooks) {
-    registerLifecycleHook(instance, hook, source[hook])
+  for (let i = 0; i < LifecycleHookNames.length; i++) {
+    const hookName: string = LifecycleHookNames[i]
+    registerLifecycleHook(instance, hookName, source[hookName])
   }
 }
 

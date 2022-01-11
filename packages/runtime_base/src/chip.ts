@@ -1,4 +1,4 @@
-import { ComponentInstance, Component } from "./component"
+import { ComponentInstance, Component, LifecycleUnit } from "./component"
 import { Effect } from "../../reactivity/src/effect"
 import {
   isReservedTag,
@@ -8,7 +8,7 @@ import { isObject, isArray, isString, isNumber, isFunction } from '../../share/s
 import { RenderPayloadNode, ChildrenRenderer } from "./workRender";
 import { VirtualInstance, VirtualOptions } from "./virtualChip";
 import { ListAccessor } from "../../share/src/shareTypes";
-import { LifecycleHookCache } from "./lifecycle";
+import { LifecycleHookCache, LifecycleHooks } from "./lifecycle";
 
 export type ChipTag = | string | Component | VirtualOptions
 
@@ -141,6 +141,10 @@ export interface ChipRoot extends Chip {
   hookCache: LifecycleHookCache
   // UI 变化后生命周期的触发策略
   mutableHookStrategy: number
+
+  // 改变视图生命周期的缓存队列
+  [LifecycleHooks.MOUNTED]?: ListAccessor<LifecycleUnit>
+  [LifecycleHooks.UPDATED]?: ListAccessor<LifecycleUnit>
 }
 
 let id = 0

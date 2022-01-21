@@ -1,5 +1,6 @@
-import { Job } from "../../runtime_base/src/scheduler"
+import { Job, JobPriorities } from "../../runtime_base/src/scheduler"
 import { isFunction } from "../../share/src"
+import { currentEventPriority } from '../../runtime_dom/src/event'
 
 export interface EffectWhiteListItem {
   source: object
@@ -21,6 +22,7 @@ export interface Effect<T = any> extends EffectOptions, Job<T> {
   (): T
   isEffect: boolean
   effectType?: number // 标记 effect 的类型，用于外部根据该类型做统计分析
+  priority: number // 副作用的执行优先级
   id?: number | string
   isActive: boolean
   stores: Set<Set<Effect>>
@@ -126,6 +128,7 @@ export function createEffect<T = any>(
   effect.stores = new Set()
   effect.lazy = options.lazy
   effect.effectType = options.effectType
+  effect.priority = JobPriorities.NORMAL // 副作用的执行优先级默认为 normal
   effect.whiteList = options.whiteList
   effect.scheduler = options.scheduler
   effect.onCollected = options.onCollected
@@ -179,6 +182,9 @@ export function dispatch(
   targetMap.has(key) ? targetMap.get(key) : targetMap.set(key, new Set())
   const effects: Set<Effect> = targetMap.get(key)
   effects.forEach((effect) => {
+    // 副作用真正执行前为其注入当前最新的事件优先级
+    effect.priority = currentEventPriority
+
     // 避免在 collector 中出现当前 effect 无限触发的情况
     if (effect !== currentEffect) {
       isFunction(effect.scheduler) ? effect.scheduler(effect) : effect()

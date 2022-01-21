@@ -22,7 +22,10 @@ export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function):
           onIdleCompleted()
         }
         // 清空闲时任务队列
-        chipRoot.idleJobs = null
+        if (chipRoot.idleJobs) {
+          chipRoot.idleJobs = null
+        }
+
         // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
         [LifecycleHooks.MOUNTED, LifecycleHooks.UPDATED].forEach((n: string) => {
           invokeLifecycle(n, chipRoot)

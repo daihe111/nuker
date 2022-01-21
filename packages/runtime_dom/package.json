@@ -1,0 +1,16 @@
+{
+  "name": "@nuker/runtime_dom",
+  "version": "0.1.1-alpha",
+  "description": "@nuker/runtime_dom",
+  "main": "index.js",
+  "module": "dist/share.esm-bundler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daihe111/nuker.git"
+  },
+  "author": "Levi Dai",
+  "license": "ISC"
+}

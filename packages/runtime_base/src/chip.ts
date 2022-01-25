@@ -139,6 +139,9 @@ export interface ChipRoot extends Chip {
   isStable: boolean
   // UI 变化后生命周期的触发策略
   mutableHookStrategy: number
+  // 是否开启更新调度，开启后会对渲染副作用进行基于执行优先级的调度
+  // 但会有一定的性能损失，默认不开启
+  openUpdaterSchedule?: boolean
 
   // 改变视图生命周期的缓存队列
   [LifecycleHooks.MOUNTED]?: ListAccessor<LifecycleUnit>

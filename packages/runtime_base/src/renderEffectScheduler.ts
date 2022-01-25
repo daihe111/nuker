@@ -3,6 +3,8 @@
  * 的渲染更新任务，标记出当前 event loop 需要采用哪一类更新，是同步
  * 更新模式还是 concurrent 模式，这将直接决定本次 event loop 中
  * 渲染更新的执行效率
+ * 每个 render effect 都具有自身的执行优先级，优先级决定了 render
+ * effect 执行的时机
  */
 
 import { Effect, injectIntoEffect } from "../../reactivity/src/effect";
@@ -10,6 +12,7 @@ import { RenderModes } from "./workRender";
 
 export interface BufferNode {
   effect: Effect
+  previous?: BufferNode // 仅 effect 开启优先级调度时存储双向链表结构
   next: BufferNode
 }
 
@@ -20,19 +23,20 @@ export const enum RenderEffectTypes {
 }
 
 export const enum RenderEffectFlags {
-  RENDER_MODE = 'renderMode',
-  END_IN_LOOP = 'endInLoop'
+  RENDER_MODE = '__n_renderMode',
+  END_IN_LOOP = '__n_endInLoop'
 }
 
 // 任务缓冲区
 let buffer: BufferNode = null
+let lastBuffer: BufferNode = null
 let isPending: boolean = false // buffer 是否处于准备态
 let isRunning: boolean = false // buffer 是否处于执行态
 // 缓冲区当前已存在 effect 缓存记录
 const effectCache: WeakMap<Effect, true> = new WeakMap()
 
-export function pushRenderEffectToBuffer(effect: Effect): void {
-  pushBuffer(effect)
+export function pushRenderEffectToBuffer(effect: Effect, needSchedule?: true): void {
+  pushBuffer(effect, needSchedule)
 
   if (!isPending) {
     isPending = true
@@ -41,17 +45,42 @@ export function pushRenderEffectToBuffer(effect: Effect): void {
 }
 
 // effect 推入缓冲区
-function pushBuffer(effect: Effect): BufferNode {
+function pushBuffer(effect: Effect, needSchedule: boolean): BufferNode {
   if (hasCache(effect)) {
     return null
   }
 
   const bufferNode: BufferNode = createBufferNode(effect)
-  if (buffer) {
-    buffer.next = bufferNode
+  if (needSchedule) {
+    if (buffer === null) {
+      buffer = lastBuffer = bufferNode
+    } else {
+      let currentNode: BufferNode = lastBuffer
+      while (currentNode.previous !== null) {
+        if (effect.priority > currentNode.effect.priority) {
+          const oldNext = bufferNode.next = currentNode.next
+          bufferNode.previous = currentNode
+          currentNode.next = bufferNode
+          if (oldNext) {
+            oldNext.previous = bufferNode
+          } else {
+            lastBuffer = bufferNode
+          }
+
+          break
+        }
+
+        currentNode = currentNode.previous
+      }
+    }
   } else {
-    buffer = bufferNode
+    if (buffer) {
+      buffer.next = bufferNode
+    } else {
+      buffer = bufferNode
+    }
   }
+
   cache(effect)
   return buffer
 }

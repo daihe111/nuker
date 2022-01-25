@@ -23,7 +23,7 @@ import { effect, disableCollecting, enableCollecting, Effect } from "../../react
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
-import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectBuffer";
+import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectScheduler";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { cacheIdleJob, replaceChipContext, performIdleWork, performIdleWorkSync } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";

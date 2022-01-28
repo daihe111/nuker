@@ -83,10 +83,21 @@ export const enum RenderUpdateTypes {
   INVALID = -1 // 无效的更新类型
 }
 
+export const enum NukerRenderModes {
+  // nuker 的默认全局渲染模式
+  // 批量执行当前 event loop 中收集到的同步渲染副作用，concurrent 任务交给
+  // 任务调度器去进行调度，由于调度系统存在时间片，因此后续 event loop 中的
+  // 同步渲染任务可以中途插入执行，但后续的 concurrent 任务会按顺序进行调度
+  BATCH_SYNC_PREFERENTIALLY = 0,
+  // 每个 event loop 中产生的渲染副作用，需要保证最终在某一时机进行批量同步提交到视图
+  BATCH_BY_EVENT_LOOP = 1,
+  // 并发渲染模式，根据每个渲染副作用的优先级进行调度，决定渲染任务执行的时机、顺序
+  CONCURRENT_WITH_PRIORITY = 2
+}
+
 // 当前正在执行渲染工作的组件 instance
-export let currentRenderingInstance: ComponentInstance = null
-let currentRenderMode: number
-const renderModeStack: number[] = []
+export let currentRenderingInstance: ComponentInstance | VirtualInstance = null
+export let nukerRenderMode: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
 
 // update types: 
 // unstable dom (if-structure, for-structure)
@@ -108,20 +119,6 @@ const renderModeStack: number[] = []
 
 // 首次渲染：有向图 chip 节点遍历，产生的任务：渲染准备、update payload
 // 更新：渲染信息更新 (instance, data source...)、update payload (保证由子到父倒序执行，离屏渲染)
-
-// 更新当前渲染模式标记位
-export function pushRenderMode(renderMode: number): number {
-  renderModeStack.push(renderMode)
-  currentRenderMode = renderMode
-  return renderMode
-}
-
-// 废弃当前渲染模式标记位，并恢复到上一个渲染模式标记位
-export function popRenderMode(): number {
-  renderModeStack.pop()
-  currentRenderMode = renderModeStack[renderModeStack.length - 1]
-  return currentRenderMode
-}
 
 // 同步执行渲染任务
 export function performRenderSync(chipRoot: ChipRoot, chip: Chip) {
@@ -453,7 +450,7 @@ export function createRenderEffectForProp(
       // 将当前 effect 推入渲染任务缓冲区
       pushRenderEffectToBuffer(job)
     }),
-    effectType: RenderEffectTypes.CAN_DISPATCH_IMMEDIATELY
+    effectType: RenderEffectTypes.SYNC
   })
 
   // 将创建的 effect 存储至当前节点对应 chip context
@@ -538,7 +535,7 @@ export function createRenderEffectForIterableChip(
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
     scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
-    effectType: RenderEffectTypes.NEED_SCHEDULE
+    effectType: RenderEffectTypes.CONCURRENT
   })
 
   cacheEffectToChip(e, chip)

@@ -8,18 +8,17 @@
  */
 
 import { Effect, injectIntoEffect } from "../../reactivity/src/effect";
-import { RenderModes } from "./workRender";
+import { RenderModes, nukerRenderMode, NukerRenderModes } from "./workRender";
 
 export interface BufferNode {
   effect: Effect
-  previous?: BufferNode // 仅 effect 开启优先级调度时存储双向链表结构
   next: BufferNode
 }
 
 // 渲染 effect 类型
 export const enum RenderEffectTypes {
-  CAN_DISPATCH_IMMEDIATELY = 0, // 可立即渲染到实际的 dom 视图上
-  NEED_SCHEDULE = 1 // 渲染任务需要进行 reconcile 并接入调度系统
+  SYNC = 0, // 可立即渲染到实际的 dom 视图上
+  CONCURRENT = 1 // 渲染任务需要进行 reconcile 并接入调度系统
 }
 
 export const enum RenderEffectFlags {
@@ -29,14 +28,13 @@ export const enum RenderEffectFlags {
 
 // 任务缓冲区
 let buffer: BufferNode = null
-let lastBuffer: BufferNode = null
 let isPending: boolean = false // buffer 是否处于准备态
 let isRunning: boolean = false // buffer 是否处于执行态
 // 缓冲区当前已存在 effect 缓存记录
 const effectCache: WeakMap<Effect, true> = new WeakMap()
 
-export function pushRenderEffectToBuffer(effect: Effect, needSchedule?: true): void {
-  pushBuffer(effect, needSchedule)
+export function pushRenderEffectToBuffer(effect: Effect): void {
+  pushBuffer(effect)
 
   if (!isPending) {
     isPending = true
@@ -45,42 +43,17 @@ export function pushRenderEffectToBuffer(effect: Effect, needSchedule?: true): v
 }
 
 // effect 推入缓冲区
-function pushBuffer(effect: Effect, needSchedule: boolean): BufferNode {
+function pushBuffer(effect: Effect): BufferNode {
   if (hasCache(effect)) {
     return null
   }
 
   const bufferNode: BufferNode = createBufferNode(effect)
-  if (needSchedule) {
-    if (buffer === null) {
-      buffer = lastBuffer = bufferNode
-    } else {
-      let currentNode: BufferNode = lastBuffer
-      while (currentNode.previous !== null) {
-        if (effect.priority > currentNode.effect.priority) {
-          const oldNext = bufferNode.next = currentNode.next
-          bufferNode.previous = currentNode
-          currentNode.next = bufferNode
-          if (oldNext) {
-            oldNext.previous = bufferNode
-          } else {
-            lastBuffer = bufferNode
-          }
-
-          break
-        }
-
-        currentNode = currentNode.previous
-      }
-    }
+  if (buffer) {
+    buffer.next = bufferNode
   } else {
-    if (buffer) {
-      buffer.next = bufferNode
-    } else {
-      buffer = bufferNode
-    }
+    buffer = bufferNode
   }
-
   cache(effect)
   return buffer
 }
@@ -116,12 +89,47 @@ export function flushBuffer(buffer: BufferNode): void {
   isPending = false
   isRunning = true
 
+  switch (nukerRenderMode) {
+    case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
+      flushBufferSyncPreferentially(buffer)
+      break
+    case NukerRenderModes.BATCH_BY_EVENT_LOOP:
+      flushBufferConsistentlyInEventLoop(buffer)
+      break
+    default:
+      flushBufferSyncPreferentially(buffer)
+      break
+  }
+  // TODO 考虑下是否等当前 buffer 全部执行完毕后一次性清空 buffer
+
+  if (buffer === null) {
+    isRunning = false
+  }
+}
+
+/**
+ * BATCH_SYNC_PREFERENTIALLY 渲染模式下批量执行 render effect 的逻辑
+ * @param buffer 
+ */
+function flushBufferSyncPreferentially(buffer: BufferNode): void {
+  let currentNode: BufferNode = buffer
+  while (currentNode !== null) {
+    currentNode.effect()
+    currentNode = head(popBuffer())
+  }
+}
+
+/**
+ * BATCH_BY_EVENT_LOOP 渲染模式下批量执行 render effect 的逻辑
+ * @param buffer 
+ */
+function flushBufferConsistentlyInEventLoop(buffer: BufferNode): void {
   // 1. 遍历 buffer 中所有 effect，根据所有 effect 的类型
   // 分析出本轮 event loop 采用哪种模式进行渲染更新
   let currentNode: BufferNode = buffer
   let renderMode: number = RenderModes.SYNCHRONOUS
   while (currentNode !== null) {
-    if (currentNode.effect?.effectType === RenderEffectTypes.NEED_SCHEDULE) {
+    if (currentNode.effect?.effectType === RenderEffectTypes.CONCURRENT) {
       renderMode = RenderModes.CONCURRENT
       break
     }
@@ -153,11 +161,6 @@ export function flushBuffer(buffer: BufferNode): void {
     // 执行渲染副作用
     effect()
     currentNode = head(popBuffer())
-  }
-  // TODO 考虑下是否等当前 buffer 全部执行完毕后一次性清空 buffer
-
-  if (buffer === null) {
-    isRunning = false
   }
 }
 

@@ -89,10 +89,8 @@ export const enum NukerRenderModes {
   // 任务调度器去进行调度，由于调度系统存在时间片，因此后续 event loop 中的
   // 同步渲染任务可以中途插入执行，但后续的 concurrent 任务会按顺序进行调度
   BATCH_SYNC_PREFERENTIALLY = 0,
-  // 每个 event loop 中产生的渲染副作用，需要保证最终在某一时机进行批量同步提交到视图
-  BATCH_BY_EVENT_LOOP = 1,
   // 并发渲染模式，根据每个渲染副作用的优先级进行调度，决定渲染任务执行的时机、顺序
-  CONCURRENT_WITH_PRIORITY = 2
+  CONCURRENT = 1
 }
 
 // 当前正在执行渲染工作的组件 instance
@@ -440,9 +438,8 @@ export function createRenderEffectForProp(
   }, (newData: DynamicRenderData, ctx: Effect) => {
     // dispatcher: 响应式数据更新后触发
     const isEndInLoop: boolean = ctx[RenderEffectFlags.END_IN_LOOP]
-    return (ctx[RenderEffectFlags.RENDER_MODE] === RenderModes.SYNCHRONOUS ?
-      patchMutationSync(chip, chipRoot, newData.props, isEndInLoop) :
-      genReconcileEffects(chip, chipRoot, newData, isEndInLoop))
+    // 使用最新的渲染数据直接同步刷新视图
+    return patchMutationSync(chip, chipRoot, newData.props, isEndInLoop)
   }, {
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑

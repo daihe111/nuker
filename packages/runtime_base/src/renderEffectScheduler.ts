@@ -1,10 +1,11 @@
 /**
- * 任务缓冲区，通过微任务 (microtask) 统计当前 event loop 中产生
- * 的渲染更新任务，标记出当前 event loop 需要采用哪一类更新，是同步
- * 更新模式还是 concurrent 模式，这将直接决定本次 event loop 中
- * 渲染更新的执行效率
- * 每个 render effect 都具有自身的执行优先级，优先级决定了 render
- * effect 执行的时机
+ * 渲染任务缓冲区，通过微任务 (microtask) 收集当前 event loop 中产生
+ * 的渲染更新任务，之所以将一个 event loop 中的渲染副作用收集并批量
+ * 同步执行，是因为我们不希望同一 event loop 中的渲染任务之间插入其他
+ * 执行逻辑，渲染任务之间插入其他执行逻辑会导致视图断断续续的刷新
+ * e.g. patch task1(1s) -> other task(3s) -> patch task2(1s)
+ * task1 对应视图刷新后需要等待 3s 才会刷新 task2 对应的视图，这样
+ * 视觉上的体验会很差
  */
 
 import { Effect, injectIntoEffect } from "../../reactivity/src/effect";
@@ -93,9 +94,6 @@ export function flushBuffer(buffer: BufferNode): void {
     case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
       flushBufferSyncPreferentially(buffer)
       break
-    case NukerRenderModes.BATCH_BY_EVENT_LOOP:
-      flushBufferConsistentlyInEventLoop(buffer)
-      break
     default:
       flushBufferSyncPreferentially(buffer)
       break
@@ -121,6 +119,7 @@ function flushBufferSyncPreferentially(buffer: BufferNode): void {
 
 /**
  * BATCH_BY_EVENT_LOOP 渲染模式下批量执行 render effect 的逻辑
+ * TODO 待废弃
  * @param buffer 
  */
 function flushBufferConsistentlyInEventLoop(buffer: BufferNode): void {

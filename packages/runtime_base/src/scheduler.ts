@@ -483,8 +483,13 @@ export function resume(): void {
 }
 
 // 取消任务
-export function cancel(jobNode: JobNode): void {
+export function cancelJob(jobNode: JobNode): void {
   jobNode.job = null
+}
+
+// 恢复任务
+export function resumeJob(jobNode: JobNode, job: Job): void {
+  jobNode.job = job
 }
 
 // 创建任务控制器
@@ -493,7 +498,7 @@ export function createJobControllers(job: Job, jobRoot: JobNode): JobControllers
     pause,
     resume,
     cancel(): void {
-      return cancel(findJob(job, jobRoot))
+      return cancelJob(findJob(job, jobRoot))
     }
   }
 }

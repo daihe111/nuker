@@ -9,7 +9,7 @@
  */
 
 import { Effect, injectIntoEffect } from "../../reactivity/src/effect";
-import { RenderModes, nukerRenderMode, NukerRenderModes } from "./workRender";
+import { RenderModes, renderMode, NukerRenderModes } from "./workRender";
 
 export interface BufferNode {
   effect: Effect
@@ -90,7 +90,7 @@ export function flushBuffer(buffer: BufferNode): void {
   isPending = false
   isRunning = true
 
-  switch (nukerRenderMode) {
+  switch (renderMode) {
     case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
       flushBufferSyncPreferentially(buffer)
       break

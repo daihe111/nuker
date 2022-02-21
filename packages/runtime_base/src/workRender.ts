@@ -16,7 +16,13 @@ import {
   getPointerChip
 } from "./chip";
 import { isArray, isFunction, createEmptyObject, extend } from "../../share/src";
-import { registerJob } from "./scheduler";
+import {
+  registerJob,
+  JobNode,
+  Job,
+  cancelJob,
+  resumeJob
+} from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
@@ -95,7 +101,8 @@ export const enum NukerRenderModes {
 
 // 当前正在执行渲染工作的组件 instance
 export let currentRenderingInstance: ComponentInstance | VirtualInstance = null
-export let nukerRenderMode: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
+export let renderMode: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
+let schedulingEffect: JobNode // 当前正在调度中的渲染副作用
 
 // update types: 
 // unstable dom (if-structure, for-structure)
@@ -1153,4 +1160,26 @@ export function cacheRenderPayload(
   }
 
   return payload
+}
+
+/**
+ * 在渲染任务注册进调度系统前，先根据新旧任务的优先级进行 PK 调度
+ * @param jobContainer 
+ * @param job 
+ */
+export function scheduleRenderJob(jobContainer: JobNode, job: Job): void {
+  const oldJob: Job = jobContainer.job
+  const priority1: number = (oldJob as Effect).priority
+  const priority2: number = (job as Effect).priority
+  if (priority1 >= priority2) {
+    // 新任务的优先级不高于旧任务，按顺序将新任务注册进调度系统
+    registerJob(job, priority2)
+  } else {
+    // 新任务优先级高于旧任务，须将旧任务取消，注册新任务后再恢复原有任务，
+    // 这样能保证高优的新任务在旧任务之前执行，高优任务执行完毕后再重新
+    // 全量执行之前取消的任务
+    cancelJob(jobContainer)
+    registerJob(job, priority2)
+    resumeJob(jobContainer, oldJob)
+  }
 }

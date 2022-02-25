@@ -19,9 +19,7 @@ import { isArray, isFunction, createEmptyObject, extend } from "../../share/src"
 import {
   registerJob,
   JobNode,
-  Job,
-  cancelJob,
-  resumeJob
+  Job
 } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
@@ -1167,19 +1165,6 @@ export function cacheRenderPayload(
  * @param jobContainer 
  * @param job 
  */
-export function scheduleRenderJob(jobContainer: JobNode, job: Job): void {
-  const oldJob: Job = jobContainer.job
-  const priority1: number = (oldJob as Effect).priority
-  const priority2: number = (job as Effect).priority
-  if (priority1 >= priority2) {
-    // 新任务的优先级不高于旧任务，按顺序将新任务注册进调度系统
-    registerJob(job, priority2)
-  } else {
-    // 新任务优先级高于旧任务，须将旧任务取消，注册新任务后再恢复原有任务，
-    // 这样能保证高优的新任务在旧任务之前执行，高优任务执行完毕后再重新
-    // 全量执行之前取消的任务
-    cancelJob(jobContainer)
-    registerJob(job, priority2)
-    resumeJob(jobContainer, oldJob)
-  }
+export function scheduleRenderJob(job: Job, priority: number): void {
+  registerJob(job, priority,)
 }

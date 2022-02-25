@@ -36,8 +36,9 @@ export interface SnapshotNode {
 }
 
 // 任务宿主节点
-export interface JobNode {
-  job: Job
+export interface JobNode extends JobOptions {
+  job: Job // 当前任务
+  originalJob: Job // 该宿主对应的初始任务
   previous?: JobNode
   next: JobNode
   isRoot?: boolean
@@ -81,6 +82,7 @@ export const JobTimeouts = {
 }
 
 export interface JobOptions {
+  allowInsertion?: boolean // 当任务中断执行时是否允许任务中间插入新的任务
   isDeepFirst?: boolean // 任务执行是否遵循深度优先规则
   expireStrategy?: number // 过期任务的处理策略
   openSnapshot?: boolean // 是否开启任务单元执行快照
@@ -123,7 +125,8 @@ let isLoopRunning = false
 // 任务 loop 是否可执行
 let isLoopValid = true
 let timer: number | void
-let currentJobNode: JobNode
+let currentJobNode: JobNode // 当前执行的任务节点
+let hasUncompletedJobWhenLoopFinished: boolean // 当前 loop 结束时存在未完成的任务
 
 // 任务队列使用链表的原因: 插入任务只需要查找和 1 次插入的开销，
 // 如果使用数组这种连续存储结构，需要查找和移动元素的开销
@@ -230,6 +233,9 @@ export function registerJob(
 export function flushJobs(jobRoot: JobNode): boolean {
   isLoopPending = false
   isLoopRunning = true
+
+  checkLoop(jobRoot)
+
   currentJobNode = head(jobRoot)
   deadline = genCurrentTime() + timeUnit
   while (currentJobNode !== null && isLoopValid) {
@@ -248,6 +254,7 @@ export function flushJobs(jobRoot: JobNode): boolean {
 
   // 当前 loop 结束
   isLoopRunning = false
+  hasUncompletedJobWhenLoopFinished = isJobToBeContinuous(currentJobNode)
 
   // 执行队列的任务全部执行完成，执行备选任务
   if (isListEmpty(jobRoot)) {
@@ -255,6 +262,29 @@ export function flushJobs(jobRoot: JobNode): boolean {
   }
 
   return true
+}
+
+/**
+ * 任务节点是未完待续的
+ * @param jobNode 
+ */
+function isJobToBeContinuous(jobNode: JobNode): boolean {
+  return jobNode.job !== null
+}
+
+/**
+ * 执行 loop 开始前的检查工作，如果 loop 首个任务为打断了上一个 loop
+ * 未执行完的任务之间，需要将被插队的任务重置到初始宿主任务
+ * @param jobRoot 
+ */
+export function checkLoop(jobRoot: JobNode): void {
+  const firstNode: JobNode = head(jobRoot)
+  if (hasUncompletedJobWhenLoopFinished) {
+    if (currentJobNode !== firstNode) {
+      // 断开的任务前插队了其他高优任务，需要将被插队任务重置为初始任务
+      resetJob(firstNode)
+    }
+  }
 }
 
 // 当执行队列为空时，检测备选队列，并触发备选队列任务的执行，
@@ -345,10 +375,12 @@ export function handleJob(jobNode: JobNode, jobRoot: JobNode): JobNode {
     // 任务如果返回子任务，说明该任务未执行完毕，后面还会
     // 继续执行，因此当前任务节点不出队，将子任务替换到当前
     // 任务节点上
+    // 注意: 当前任务执行可能会触发全新任务的注册导致任务插入
+    // 当前任务前方
     const childJob: Job = invokeJob(jobNode)
     if (childJob === null) {
-      // 当前任务执行完毕，移出任务队列
-      popJob(jobRoot)
+      // 当前任务执行完毕，移出任务队列 (当前任务前可能插入新任务，因此不能直接 pop 任务宿主节点)
+      removeJob(jobNode.job, jobRoot)
       if (isFunction(jobNode.hooks?.onCompleted)) {
         // 当前任务节点全部处理完毕，执行对应的 hook
         jobNode.hooks?.onCompleted()
@@ -361,7 +393,7 @@ export function handleJob(jobNode: JobNode, jobRoot: JobNode): JobNode {
       case ExpireStrategies.DEFAULT:
         const childJob: Job = invokeJob(jobNode, isExpired)
         if (childJob === null) {
-          popJob(jobRoot)
+          removeJob(jobNode.job, jobRoot)
           if (isFunction(jobNode.hooks?.onCompleted)) {
             // 当前任务节点全部处理完毕，执行对应的 hook
             jobNode.hooks?.onCompleted()
@@ -431,13 +463,6 @@ export function invokeJob(jobNode: JobNode, ...jobArgs: any[]): Job | null {
       if (isDeepFirst) {
         // 深度优先执行子任务
         jobNode.job = childJob
-
-        // 将快照信息拷贝到子任务上，保证执行子任务时能访问到
-        // 正确的快照链表信息
-        if (__DEV__ && job.scopedSnapshot) {
-          childJob.scopedSnapshot = job.scopedSnapshot
-        }
-
         return childJob
       }
       // 子任务作为新任务重新注册入队
@@ -487,9 +512,9 @@ export function cancelJob(jobNode: JobNode): void {
   jobNode.job = null
 }
 
-// 恢复任务
-export function resumeJob(jobNode: JobNode, job: Job): void {
-  jobNode.job = job
+// 重置任务: 将任务节点挂载的任务重置为初始宿主任务
+export function resetJob(jobNode: JobNode): void {
+  jobNode.job = jobNode.originalJob
 }
 
 // 创建任务控制器

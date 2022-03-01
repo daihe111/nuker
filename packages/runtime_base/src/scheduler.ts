@@ -5,8 +5,7 @@ import {
   EMPTY_OBJ,
   deleteProperty,
   hasOwn,
-  genBaseListNode,
-  createEmptyObject,
+  isBoolean,
   extend
 } from "../../share/src"
 import { ListAccessor } from "../../share/src/shareTypes"
@@ -27,7 +26,7 @@ export interface Job<T = any> {
   delay?: number
   isExpired?: boolean
   hooks?: JobHooks
-  options?: JobOptions
+  convergentable?: boolean
 }
 
 export interface SnapshotNode {
@@ -81,12 +80,17 @@ export const JobTimeouts = {
   IDLE: MAX_INT // 闲置优先级，永远不会过期
 }
 
-export interface JobOptions {
+// scheduler 全局配置
+export interface SchedulerOptions {
   allowInsertion?: boolean // 当任务中断执行时是否允许任务中间插入新的任务
   isDeepFirst?: boolean // 任务执行是否遵循深度优先规则
   expireStrategy?: number // 过期任务的处理策略
   openSnapshot?: boolean // 是否开启任务单元执行快照
-  hooks?: JobHooks
+}
+
+export interface JobOptions {
+  convergentable?: boolean // 任务为可收敛的，相邻可收敛任务可收敛为一个连续执行的任务，因此任务之间不支持中断
+  hooks?: JobHooks // hooks
 }
 
 // 任务控制器
@@ -110,7 +114,12 @@ export const enum MacrotaskTypes {
   BROADCAST = 1 // port postMessage
 }
 
-const jobContentKey: string = 'job'
+// scheduler configs
+let allowInsertion: boolean
+let isDeepFirst: boolean
+let expireStrategy: number
+let openSnapshot: boolean
+
 let id = 0
 // 每帧的时间片单元，是每帧时间内用来执行 js 逻辑的最长时长，任务
 // 连续执行超过时间片单元，就需要中断执行把主线程让给优先级更高的任务
@@ -124,7 +133,6 @@ let isLoopPending = false
 let isLoopRunning = false
 // 任务 loop 是否可执行
 let isLoopValid = true
-let timer: number | void
 let currentJobNode: JobNode // 当前执行的任务节点
 let hasUncompletedJobWhenLoopFinished: boolean // 当前 loop 结束时存在未完成的任务
 
@@ -134,6 +142,13 @@ let hasUncompletedJobWhenLoopFinished: boolean // 当前 loop 结束时存在未
 const jobListRoot: JobNode = initJobList(null, JobListTypes.JOB_LIST)
 // 备选任务执行队列
 const backupListRoot: JobNode = initJobList(null, JobListTypes.BACKUP_LIST)
+
+export function initScheduler({ allowInsertion: a, isDeepFirst: i, expireStrategy: e, openSnapshot: o }: SchedulerOptions): void {
+  allowInsertion = isBoolean(a) ? a : false
+  isDeepFirst = isBoolean(i) ? i : true
+  expireStrategy = isNumber(e) ? e : ExpireStrategies.DEFAULT
+  openSnapshot = __DEV__ ? (isBoolean(o) ? o : true) : false
+}
 
 // 初始化任务队列
 function initJobList(job: Job, type: number): JobNode {
@@ -212,9 +227,8 @@ export function registerJob(
   job.timeout = job.timeout || timeout
   job.startTime = job.birth + job.delay
   job.delay = job.delay || delay
-  job.options = job.options || options
   job.controller = createJobControllers(job, jobListRoot)
-  job.hooks = options.hooks
+  extend(job, options)
   if (registerMode !== RegisterModes.AFTER_BLASTING_JOB) {
     job.expirationTime = job.startTime + job.timeout
   }
@@ -239,7 +253,11 @@ export function flushJobs(jobRoot: JobNode): boolean {
   currentJobNode = head(jobRoot)
   deadline = genCurrentTime() + timeUnit
   while (currentJobNode !== null && isLoopValid) {
-    if (shouldYield()) {
+    const next: JobNode = handleJob(currentJobNode, jobRoot)
+    if (
+      !needConvergeBackwards(currentJobNode) &&
+      shouldYield()
+    ) {
       // 当前 loop 执行中断结束，执行权让给高优先级的任务.
       // 将高优先级的任务添加到执行队列，然后在下一个 loop
       // 去恢复任务的批量执行
@@ -249,7 +267,7 @@ export function flushJobs(jobRoot: JobNode): boolean {
       return false
     }
 
-    currentJobNode = handleJob(currentJobNode, jobRoot)
+    currentJobNode = next
   }
 
   // 当前 loop 结束
@@ -273,16 +291,30 @@ function isJobToBeContinuous(jobNode: JobNode): boolean {
 }
 
 /**
+ * 任务是否可向后收敛
+ * @param jobNode 
+ */
+function needConvergeBackwards(jobNode: JobNode): boolean {
+  return (jobNode.job?.convergentable === true &&
+  jobNode.next?.job?.convergentable === true)
+}
+
+/**
  * 执行 loop 开始前的检查工作，如果 loop 首个任务为打断了上一个 loop
  * 未执行完的任务之间，需要将被插队的任务重置到初始宿主任务
  * @param jobRoot 
  */
 export function checkLoop(jobRoot: JobNode): void {
+  if (allowInsertion) {
+    // 如果调度系统允许中断的任务被其他任务插队，则跳过 loop 检查
+    return
+  }
+
   const firstNode: JobNode = head(jobRoot)
   if (hasUncompletedJobWhenLoopFinished) {
     if (currentJobNode !== firstNode) {
       // 断开的任务前插队了其他高优任务，需要将被插队任务重置为初始任务
-      resetJob(firstNode)
+      resetJob(currentJobNode)
     }
   }
 }
@@ -335,7 +367,6 @@ export function fetchPriorJobs(): void {
     if (job.startTime <= currentTime) {
       if (job.isExpired) {
         // 过期任务处理
-        const expireStrategy = job.options?.expireStrategy || ExpireStrategies.DEFAULT
         switch (expireStrategy) {
           case ExpireStrategies.REBIRTH:
             popJob(backupListRoot)
@@ -388,7 +419,6 @@ export function handleJob(jobNode: JobNode, jobRoot: JobNode): JobNode {
     }
   } else {
     // 过期任务处理
-    const expireStrategy: number = job.options?.expireStrategy || ExpireStrategies.DEFAULT
     switch (expireStrategy) {
       case ExpireStrategies.DEFAULT:
         const childJob: Job = invokeJob(jobNode, isExpired)
@@ -458,7 +488,6 @@ export function invokeJob(jobNode: JobNode, ...jobArgs: any[]): Job | null {
     cacheJobSnapshot(job, jobNode)
 
     if (isFunction(childJob)) {
-      const { isDeepFirst } = job.options
       // 根据任务是否深度优先执行分别进行处理
       if (isDeepFirst) {
         // 深度优先执行子任务
@@ -580,13 +609,14 @@ export function createJobNode(
   previous?: JobNode,
   next?: JobNode
 ): JobNode {
-  const jobNode = createEmptyObject()
-  jobNode.type = type
-  jobNode.hooks = job.hooks
-  return extend(
-    jobNode,
-    genBaseListNode(job, jobContentKey, previous, next)
-  )
+  return {
+    job,
+    previous,
+    next,
+    originalJob: job,
+    type,
+    hooks: job.hooks
+  }
 }
 
 export function isRoot(jobNode: JobNode): boolean {

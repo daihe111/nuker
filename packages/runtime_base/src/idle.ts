@@ -2,13 +2,25 @@ import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot, ChipEffe
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend, isFunction } from "../../share/src";
 import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
+import { ListAccessor } from "../../share/src/shareTypes";
 
+export const enum IdleTypes {
+  CONCURRENT = 0, // concurrent 渲染任务产生的闲时任务
+  SYNC = 1 // 同步渲染任务产生的闲时任务
+}
+
+// TODO 已废弃
+// 原因:
+//    1. commit 视图变化后需要立即将当前批次 commit 产生的闲时任务全部执行完，且中途不可打断，
+//       保证试图渲染后所有涉及到的状态信息及时同步到对应的 virtual dom 上
+//    2. concurrent 渲染模式下，commit 视图变化后不希望插入其他渲染任务，如果插入，会导致
+//       被重置后的任务多次执行相同的 commit 视图操作，这显然是不允许的
 // idle 阶段批量执行 reconcile & commit 阶段产生的闲时任务，且任务支持调度系统的中断与恢复，
 // 以保证闲时任务不长时间执行阻塞主线程
 // reconcile tasks -> commit -> idle 需要作为一个整体任务注册进调度系统，idle 及之前阶段
 // 产生的 reconcile 任务须保证排在 idle 任务之后，以保证新的 reconcile 任务执行时能访问到正
 // 确的 chip 数据状态，避免数据状态错乱
-export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function): Function {
+export function performIdleWorkConcurrently(chipRoot: ChipRoot, onIdleCompleted?: Function): Function {
   // 闲时任务执行单元，作为调度任务的子任务
   function idleJobPerformingUnit(jobNode: IdleJobUnit): Function {
     const { job, next } = jobNode
@@ -22,8 +34,8 @@ export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function):
           onIdleCompleted()
         }
         // 清空闲时任务队列
-        if (chipRoot.idleJobs) {
-          chipRoot.idleJobs = null
+        if (chipRoot.concurrentIdleJobs) {
+          chipRoot.concurrentIdleJobs = null
         }
 
         // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
@@ -53,21 +65,43 @@ export function performIdleWork(chipRoot: ChipRoot, onIdleCompleted?: Function):
   // 清除已废弃 effect 缓存
   chipRoot.abandonedEffects = null
   // 执行第一个闲时任务，并返回下一个要执行的闲时任务
-  return idleJobPerformingUnit(chipRoot.idleJobs?.first)
+  return idleJobPerformingUnit(chipRoot.concurrentIdleJobs?.first)
 }
 
 /**
- * 同步方式执行 idle 阶段任务
+ * 批量执行显示任务队列中的任务并清空队列，每次执行时队列中的任务会收敛为一个不可打断的同步任务
  * @param chipRoot 
+ * @param type 
  */
-export function performIdleWorkSync(chipRoot: ChipRoot): void {
-  const idleJobs: IdleJobUnit = chipRoot.idleJobs?.first
-  let currentUnit: IdleJobUnit = idleJobs
+export function performIdleWork(chipRoot: ChipRoot, type: number): boolean {
+  const accessor: ListAccessor<IdleJobUnit> = (type === IdleTypes.CONCURRENT ?
+    chipRoot.concurrentIdleJobs :
+    (type === IdleTypes.SYNC ?
+      chipRoot.syncIdleJobs :
+      null))
+  if (!accessor?.first) {
+    return
+  }
+
+  // 批量执行闲时任务
+  let currentUnit: IdleJobUnit = accessor.first
   while (currentUnit !== null) {
     currentUnit.job()
     currentUnit = currentUnit.next
   }
-  chipRoot.idleJobs = null
+
+  // 执行完闲时任务后清空对应的任务队列
+  switch (type) {
+    case IdleTypes.CONCURRENT:
+      chipRoot.concurrentIdleJobs = null
+      break
+    case IdleTypes.SYNC:
+      chipRoot.syncIdleJobs = null
+      break
+    default:
+      // do nothing, an error type has been passed in
+      break
+  }
 }
 
 // 用 reconcile 阶段新生成的 chip 子树更新 chip 局部子树，并清理过期状态
@@ -165,8 +199,12 @@ export function updateRefs(chip: Chip): void {
  * @param job 
  * @param chipRoot 
  */
-export function cacheIdleJob(job: Function, chipRoot: ChipRoot): Function {
-  const idleJobs = chipRoot.idleJobs
+export function cacheIdleJob(job: Function, chipRoot: ChipRoot, type: number): Function {
+  const idleJobs = (type === IdleTypes.CONCURRENT ?
+    chipRoot.concurrentIdleJobs :
+    (type === IdleTypes.SYNC ?
+      chipRoot.syncIdleJobs :
+      null))
   const jobNode = {
     job,
     next: null
@@ -174,9 +212,22 @@ export function cacheIdleJob(job: Function, chipRoot: ChipRoot): Function {
   if (idleJobs) {
     idleJobs.last = idleJobs.last.next = jobNode
   } else {
-    chipRoot.idleJobs = {
-      first: jobNode,
-      last: jobNode
+    switch (type) {
+      case IdleTypes.CONCURRENT:
+        chipRoot.concurrentIdleJobs = {
+          first: jobNode,
+          last: jobNode
+        }
+        break
+      case IdleTypes.SYNC:
+        chipRoot.syncIdleJobs = {
+          first: jobNode,
+          last: jobNode
+        }
+        break
+      default:
+        // do nothing, an error type has been passed in
+        break
     }
   }
 

@@ -143,6 +143,10 @@ const jobListRoot: JobNode = initJobList(null, JobListTypes.JOB_LIST)
 // 备选任务执行队列
 const backupListRoot: JobNode = initJobList(null, JobListTypes.BACKUP_LIST)
 
+/**
+ * 初始化 scheduler
+ * @param param
+ */
 export function initScheduler({ allowInsertion: a, isDeepFirst: i, expireStrategy: e, openSnapshot: o }: SchedulerOptions): void {
   allowInsertion = isBoolean(a) ? a : false
   isDeepFirst = isBoolean(i) ? i : true
@@ -154,7 +158,7 @@ export function initScheduler({ allowInsertion: a, isDeepFirst: i, expireStrateg
 function initJobList(job: Job, type: number): JobNode {
   const jobRoot: JobNode = {
     isRoot: true,
-    ...createJobNode(null, type)
+    ...createJobNode(job, type)
   }
   jobRoot.previous = jobRoot.next = jobRoot
   return jobRoot

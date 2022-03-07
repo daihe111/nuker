@@ -24,7 +24,7 @@ export const enum RenderEffectTypes {
 
 export const enum RenderEffectFlags {
   RENDER_MODE = '__n_renderMode',
-  END_IN_LOOP = '__n_endInLoop'
+  END_IN_LOOP = '__n_endInLoop' // TODO 待废弃
 }
 
 // 任务缓冲区

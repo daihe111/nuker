@@ -130,7 +130,9 @@ export interface Chip extends ChipCore {
 // nuker 的虚拟根节点
 export interface ChipRoot extends Chip {
   // 闲时任务队列
-  idleJobs: ListAccessor<IdleJobUnit>
+  concurrentIdleJobs: ListAccessor<IdleJobUnit>
+  // 
+  syncIdleJobs: ListAccessor<IdleJobUnit>
   // 渲染描述载荷队列
   renderPayloads: ListAccessor<RenderPayloadNode>
   // 当前渲染周期内缓存的已失效 effect，这些 effect 将在 idle 阶段被释放

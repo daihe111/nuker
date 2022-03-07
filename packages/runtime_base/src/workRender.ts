@@ -29,7 +29,7 @@ import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from ".
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectScheduler";
 import { ListAccessor } from "../../share/src/shareTypes";
-import { cacheIdleJob, replaceChipContext, performIdleWork, performIdleWorkSync } from "./idle";
+import { cacheIdleJob, replaceChipContext, performIdleWork, performIdleWorkSync, IdleTypes } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 
 export interface ReconcileChipPair {
@@ -392,22 +392,16 @@ export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Ch
  * @param chip 
  * @param chipRoot 
  * @param props 
- * @param needPerformIdle 
  */
 export function patchMutationSync(
   chip: Chip,
   chipRoot: ChipRoot,
-  props: object,
-  needPerformIdle: boolean
+  props: object
 ): void {
   commitProps(chip.elm, props)
   cacheIdleJob(() => {
     chip.props = extend(chip.props, props)
   }, chipRoot)
-
-  if (needPerformIdle) {
-    performIdleWorkSync(chipRoot)
-  }
 }
 
 /**
@@ -440,11 +434,10 @@ export function createRenderEffectForProp(
     literal = value()
     setLiteralForDynamicValue(literal, value)
     return { props: { [propName]: literal } }
-  }, (newData: DynamicRenderData, ctx: Effect) => {
+  }, (newData: DynamicRenderData) => {
     // dispatcher: 响应式数据更新后触发
-    const isEndInLoop: boolean = ctx[RenderEffectFlags.END_IN_LOOP]
     // 使用最新的渲染数据直接同步刷新视图
-    return patchMutationSync(chip, chipRoot, newData.props, isEndInLoop)
+    return patchMutationSync(chip, chipRoot, newData.props)
   }, {
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
@@ -647,7 +640,7 @@ export function genReconcileEffects(
     // 存在动态子代节点，触发新旧子代节点的 diff 流程，并生产对应的 render payload
     const newChip = cloneChip(chip, chip.props, children)
     // trigger reconcile diff
-    performReconcileWork(chip, newChip, chipRoot, needCommit)
+    performReconcileWork(chip, newChip, chipRoot)
   }
 }
 
@@ -655,12 +648,11 @@ export function genReconcileEffects(
 export function performReconcileWork(
   oldChip: Chip,
   newChip: Chip,
-  chipRoot: ChipRoot,
-  needCommit?: boolean
+  chipRoot: ChipRoot
 ): void {
   try {
     newChip.wormhole = oldChip
-    registerOngoingReconcileWork(newChip, chipRoot, needCommit)
+    registerOngoingReconcileWork(newChip, chipRoot)
   } catch (e) {
 
   }
@@ -670,8 +662,7 @@ export function performReconcileWork(
 // 每个任务返回下一 chip 节点对做 reconcile 的子任务，以此类推
 export function registerOngoingReconcileWork(
   chip: Chip,
-  chipRoot: ChipRoot,
-  needCommit: boolean
+  chipRoot: ChipRoot
 ): void {
   const originalChip: Chip = chip
   // 待注册进 scheduler 中的节点 reconcile 任务
@@ -683,7 +674,8 @@ export function registerOngoingReconcileWork(
         const pointer: Chip = getPointerChip(chip.wormhole)
         cacheIdleJob(
           replaceChipContext.bind(null, chip, chip.wormhole, pointer),
-          chipRoot
+          chipRoot,
+          IdleTypes.CONCURRENT
         )
 
         // 返回处理下一组 chip 节点的子任务
@@ -692,7 +684,7 @@ export function registerOngoingReconcileWork(
       } else {
         // reconcile 执行完毕，如需执行 commit 任务，则返回 commit
         // 子任务，否则当前任务返回 null 标记执行完毕
-        return (needCommit ? performCommitWork.bind(null, chipRoot) : null)
+        return performCommitWork.bind(null, chipRoot)
       }
     } else {
       // 处理起始节点的子代节点

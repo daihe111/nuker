@@ -20,7 +20,7 @@ export interface EffectOptions {
 }
 
 export interface Effect<T = any> extends EffectOptions, Job<T> {
-  (): T
+  (): unknown // 返回值来源于 dispatcher
   isEffect: boolean
   effectType?: number // 标记 effect 的类型，用于外部根据该类型做统计分析
   priority: number // 副作用的执行优先级
@@ -55,8 +55,7 @@ export const ITERATE_PROXY_KEYS = {
 }
 
 let id = 0
-let currentEffect: Effect | null = null
-const effectStack = []
+let currentEffect: Effect | null = null // 当前处于激活态的 effect
 const store = new WeakMap()
 // 全局 effect 收集开关
 let collectingFlag = CollectingFlags.COLLECTING_OPENED
@@ -88,27 +87,18 @@ export function injectIntoEffect(effect: Effect, key: string, value: any): Effec
   return effect
 }
 
-export function pushEffect(effect: Effect): void {
-  currentEffect = effect
-  effectStack.push(currentEffect)
-}
-
-export function popEffect(): void {
-  effectStack.pop()
-  currentEffect = effectStack[effectStack.length - 1]
-}
-
 export function createEffect<T = any>(
   collector: (ctx: Effect) => T,
-  dispatcher: (data: T, ctx: Effect) => T,
+  dispatcher: (data: T, ctx: Effect) => unknown,
   options: EffectOptions = {}
 ): Effect {
-  const runner = (effect: Effect): T => {
+  const runner = (effect: Effect): any => {
     // TODO 派发时额外的执行工作 (依赖清理工作)
-    pushEffect(effect)
+    const previousEffect: Effect = currentEffect
+    currentEffect = effect
     // 只取值，触发 getter
     const result = collector(effect)
-    popEffect()
+    currentEffect = previousEffect
     // 不能取值，防止取值时 trap 收集到错误的 effect，仅触发取值外的其他副作用
     disableCollecting()
     dispatcher(result, effect)
@@ -116,7 +106,7 @@ export function createEffect<T = any>(
     options.onRunned && options.onRunned()
     return result
   }
-  const effect: Effect = (): T => {
+  const effect: Effect = (): unknown => {
     if (!effect.isActive) {
       return
     }

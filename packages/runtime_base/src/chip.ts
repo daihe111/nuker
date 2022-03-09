@@ -240,6 +240,10 @@ export function isLastChildOfChip(child: Chip, parent: Chip): boolean {
   return (child.parent.lastChild === child)
 }
 
+export function createChipRoot(): ChipRoot {
+
+}
+
 export function createChip(
   tag: ChipTag,
   props?: ChipProps,

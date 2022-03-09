@@ -6,7 +6,8 @@ import {
   deleteProperty,
   hasOwn,
   isBoolean,
-  extend
+  extend,
+  NO
 } from "../../share/src"
 import { ListAccessor } from "../../share/src/shareTypes"
 
@@ -86,6 +87,10 @@ export interface SchedulerOptions {
   isDeepFirst?: boolean // 任务执行是否遵循深度优先规则
   expireStrategy?: number // 过期任务的处理策略
   openSnapshot?: boolean // 是否开启任务单元执行快照
+
+  // hooks
+  onConvergentJobsStarted?: Function // 可收敛任务开始执行时的 hook
+  onConvergentJobsFinished?: Function // 一批可收敛任务执行完毕时触发的 hook
 }
 
 export interface JobOptions {
@@ -120,6 +125,10 @@ let isDeepFirst: boolean
 let expireStrategy: number
 let openSnapshot: boolean
 
+// global hooks
+let onConvergentJobsStarted: Function
+let onConvergentJobsFinished: Function
+
 let id = 0
 // 每帧的时间片单元，是每帧时间内用来执行 js 逻辑的最长时长，任务
 // 连续执行超过时间片单元，就需要中断执行把主线程让给优先级更高的任务
@@ -147,10 +156,19 @@ const backupListRoot: JobNode = initJobList(null, JobListTypes.BACKUP_LIST)
  * 初始化 scheduler
  * @param param
  */
-export function initScheduler({ allowInsertion: a, isDeepFirst: i, expireStrategy: e, openSnapshot: o }: SchedulerOptions): void {
+export function initScheduler({
+  allowInsertion: a,
+  isDeepFirst: i,
+  expireStrategy: e,
+  openSnapshot: o,
+  onConvergentJobsStarted: cjs,
+  onConvergentJobsFinished: cjf
+}: SchedulerOptions): void {
   allowInsertion = isBoolean(a) ? a : false
   isDeepFirst = isBoolean(i) ? i : true
   expireStrategy = isNumber(e) ? e : ExpireStrategies.DEFAULT
+  onConvergentJobsStarted = cjs || NO
+  onConvergentJobsFinished = cjf || NO
   openSnapshot = __DEV__ ? (isBoolean(o) ? o : true) : false
 }
 
@@ -257,7 +275,17 @@ export function flushJobs(jobRoot: JobNode): boolean {
   currentJobNode = head(jobRoot)
   deadline = genCurrentTime() + timeUnit
   while (currentJobNode !== null && isLoopValid) {
+    // invoke hook
+    if (enterConvergence(currentJobNode)) {
+      onConvergentJobsStarted()
+    }
+
     const next: JobNode = handleJob(currentJobNode, jobRoot)
+
+    if (exitConvergence(currentJobNode)) {
+      onConvergentJobsFinished()
+    }
+
     if (
       !needConvergeBackwards(currentJobNode) &&
       shouldYield()
@@ -299,8 +327,23 @@ function isJobToBeContinuous(jobNode: JobNode): boolean {
  * @param jobNode 
  */
 function needConvergeBackwards(jobNode: JobNode): boolean {
-  return (jobNode.job?.convergentable === true &&
-  jobNode.next?.job?.convergentable === true)
+  return (jobNode.job?.convergentable && jobNode.next?.job?.convergentable)
+}
+
+/**
+ * 是否即将进入任务收敛阶段
+ * @param jobNode 
+ */
+function enterConvergence(jobNode: JobNode): boolean {
+  return (jobNode.job?.convergentable && !jobNode.previous?.job?.convergentable)
+}
+
+/**
+ * 是否已退出任务收敛阶段
+ * @param jobNode 
+ */
+function exitConvergence(jobNode: JobNode): boolean {
+  return (jobNode.job?.convergentable && !jobNode.next?.job?.convergentable)
 }
 
 /**

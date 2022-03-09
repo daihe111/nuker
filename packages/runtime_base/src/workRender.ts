@@ -13,13 +13,15 @@ import {
   StaticValue,
   ChipPropValue,
   getPropLiteralValue,
-  getPointerChip
+  getPointerChip,
+  createChipRoot
 } from "./chip";
 import { isArray, isFunction, createEmptyObject, extend } from "../../share/src";
 import {
   registerJob,
   JobNode,
-  Job
+  Job,
+  initScheduler
 } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance } from "./component";
 import { domOptions } from "./domOptions";
@@ -101,6 +103,20 @@ export const enum NukerRenderModes {
 export let currentRenderingInstance: ComponentInstance | VirtualInstance = null
 export let renderMode: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
 let schedulingEffect: JobNode // 当前正在调度中的渲染副作用
+
+/**
+ * nuker 框架渲染总入口方法
+ */
+export function render(rm: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY): void {
+  renderMode = rm
+  const chipRoot: ChipRoot = createChipRoot()
+  initScheduler({
+    isDeepFirst: true,
+    ...rm === NukerRenderModes.CONCURRENT ? {
+      onConvergentJobsFinished: performIdleWork.bind(null, chipRoot, IdleTypes.SYNC)
+    } : {}
+  })
+}
 
 // update types: 
 // unstable dom (if-structure, for-structure)

@@ -14,9 +14,11 @@ import {
   ChipPropValue,
   getPropLiteralValue,
   getPointerChip,
-  createChipRoot
+  createChipRoot,
+  createChip,
+  ChipTag
 } from "./chip";
-import { isArray, isFunction, createEmptyObject, extend } from "../../share/src";
+import { isArray, isFunction, createEmptyObject, extend, isString } from "../../share/src";
 import {
   registerJob,
   JobNode,
@@ -33,6 +35,8 @@ import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "
 import { ListAccessor } from "../../share/src/shareTypes";
 import { cacheIdleJob, replaceChipContext, performIdleWork, performIdleWorkSync, IdleTypes } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
+
+export type AppContent = | Component | Chip
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -72,10 +76,10 @@ export interface RenderPayloadNode {
   next: RenderPayloadNode | null
 }
 
-// 框架渲染模式
-export const enum RenderModes {
-  SYNCHRONOUS = 0, // 同步渲染模式
-  CONCURRENT = 1 // 异步并发渲染模式
+// 框架挂载模式
+export const enum MountModes {
+  SYNCHRONOUS = 0, // 同步挂载模式
+  CONCURRENT = 1 // 异步并发挂载模式
 }
 
 export const enum RenderUpdateTypes {
@@ -107,8 +111,13 @@ let schedulingEffect: JobNode // 当前正在调度中的渲染副作用
 /**
  * nuker 框架渲染总入口方法
  */
-export function render(rm: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY): void {
+export function render(
+  appContent: AppContent,
+  container: Element | string,
+  rm: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
+): Element {
   renderMode = rm
+  const chip: Chip = createChip((appContent as ChipTag))
   const chipRoot: ChipRoot = createChipRoot()
   initScheduler({
     isDeepFirst: true,
@@ -116,6 +125,12 @@ export function render(rm: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY):
       onConvergentJobsFinished: performIdleWork.bind(null, chipRoot, IdleTypes.SYNC)
     } : {}
   })
+
+  // 执行离屏渲染，渲染完成后将内存中的根节点挂载到指定的 dom 容器中
+  const root: Element = performRenderSync(chipRoot, chip)
+  container = isString(container) ? domOptions.getElementById(container) : container
+  domOptions.appendChild(root, container)
+  return container
 }
 
 // update types: 
@@ -139,16 +154,29 @@ export function render(rm: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY):
 // 首次渲染：有向图 chip 节点遍历，产生的任务：渲染准备、update payload
 // 更新：渲染信息更新 (instance, data source...)、update payload (保证由子到父倒序执行，离屏渲染)
 
-// 同步执行渲染任务
-export function performRenderSync(chipRoot: ChipRoot, chip: Chip) {
-  let ongoingChip = chip
+/**
+ * 同步执行渲染任务，整个渲染过程为离屏渲染，仅发生在内存中
+ * 方法返回渲染之后内存中的 dom 根节点
+ * @param chipRoot 
+ * @param chip 
+ */
+export function performRenderSync(chipRoot: ChipRoot, chip: Chip): Element {
+  let rootContainer: Element
+  let ongoingChip: Chip = chip
   while (ongoingChip !== null) {
-    ongoingChip = performChipWork(chipRoot, ongoingChip, RenderModes.SYNCHRONOUS)
+    ongoingChip = performChipWork(chipRoot, ongoingChip, MountModes.SYNCHRONOUS)
+
+    if (ongoingChip === null) {
+      // 表示 chip 树已回溯至根节点，整颗 chip 树已完成离屏渲染
+      rootContainer = chipRoot.root.elm
+    }
   }
 
   // 批量执行当前渲染周期内缓存的所有 mounted 生命周期
   invokeLifecycle(LifecycleHooks.MOUNTED, chipRoot)
   chipRoot[LifecycleHooks.MOUNTED] = null
+
+  return rootContainer
 }
 
 // 以异步可调度的方式执行渲染任务
@@ -159,7 +187,7 @@ export function performRenderConcurrent(chipRoot: ChipRoot, chip: Chip) {
 export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip): void {
   function chipPerformingJob(chipRoot: ChipRoot, chip: Chip): Function {
     // get next chip to working
-    const next = performChipWork(chipRoot, chip, RenderModes.CONCURRENT)
+    const next = performChipWork(chipRoot, chip, MountModes.CONCURRENT)
     if (next && next[ChipFlags.IS_CHIP]) {
       return chipPerformingJob.bind(null, chipRoot, next)
     } else {
@@ -170,8 +198,20 @@ export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip): void {
   registerJob(chipPerformingJob.bind(null, chipRoot, chip))
 }
 
-// chip unit work 执行
-export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): Chip {
+/**
+ * chip unit work 执行
+ * callback 会回传当前 chip 节点挂载后的 dom 容器
+ * @param chipRoot 
+ * @param chip 
+ * @param mode 
+ * @param callback 
+ */
+export function performChipWork(
+  chipRoot: ChipRoot,
+  chip: Chip,
+  mode: number,
+  callback?: (chip: Chip) => void
+): Chip {
   if (chip === null) {
     return null
   }
@@ -196,7 +236,7 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
         chip.currentChildIndex = isArray(children) ? (children.length - 1) : 0
         next = lastChild
       } else {
-        next = completeChip(chipRoot, chip, mode)
+        next = completeChip(chipRoot, chip, mode, callback)
       }
 
       return next
@@ -205,12 +245,12 @@ export function performChipWork(chipRoot: ChipRoot, chip: Chip, mode: number): C
     }
   } else if (chip.phase === ChipPhases.INITIALIZE) {
     // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
-    return completeChip(chipRoot, chip, mode)
+    return completeChip(chipRoot, chip, mode, callback)
   }
 }
 
 // 为当前 chip 执行可供渲染用的相关准备工作
-export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot) {
+export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot): void {
   switch (chip.chipType) {
     case ChipTypes.CUSTOM_COMPONENT:
       initRenderWorkForComponent(chip)
@@ -233,7 +273,12 @@ export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot) {
 // 返回下一个要处理的 chip 节点
 // 同级兄弟节点的处理顺序为从尾到头，以保证靠近尾部的节点优先渲染，渲染
 // 靠近头部的节点时可以获取到后面节点的 dom 作为插入锚点
-export function completeChip(chipRoot: ChipRoot, chip: Chip, mode: number): Chip {
+export function completeChip(
+  chipRoot: ChipRoot,
+  chip: Chip,
+  mode: number,
+  callback?: (chip: Chip) => void
+): Chip {
   chip.phase = ChipPhases.COMPLETE
   genMutableEffects(chipRoot, chip, mode)
 
@@ -246,6 +291,10 @@ export function completeChip(chipRoot: ChipRoot, chip: Chip, mode: number): Chip
     if (isArray(children)) {
       sibling = children[--parent.currentChildIndex]
     }
+  }
+
+  if (isFunction(callback)) {
+    callback(chip)
   }
 
   if (sibling) {
@@ -268,10 +317,10 @@ export function completeChip(chipRoot: ChipRoot, chip: Chip, mode: number): Chip
 //    在 commit 阶段进行批量同步执行
 export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) {
   switch (mode) {
-    case RenderModes.SYNCHRONOUS:
+    case MountModes.SYNCHRONOUS:
       completeRenderWorkForChipSync(chipRoot, chip)
       break
-    case RenderModes.CONCURRENT:
+    case MountModes.CONCURRENT:
       completeRenderWorkForChipConcurrent(chipRoot, chip)
       break
     default:
@@ -425,7 +474,7 @@ export function patchMutationSync(
   const idleJob = () => {
     chip.props = extend(chip.props, props)
   }
-  if (renderMode === RenderModes.CONCURRENT) {
+  if (renderMode === NukerRenderModes.CONCURRENT) {
     // 如果框架渲染模式是 concurrent，同步渲染副作用执行时优先 commit
     // 视图变化，并将闲时任务缓存起来，等一批同步渲染任务全部执行完后再
     // 批量同步执行 commit 阶段缓存的闲时任务

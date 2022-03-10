@@ -9,7 +9,6 @@
  */
 
 import { Effect, injectIntoEffect } from "../../reactivity/src/effect";
-import { RenderModes, renderMode, NukerRenderModes } from "./workRender";
 
 export interface BufferNode {
   effect: Effect
@@ -90,14 +89,7 @@ export function flushBuffer(buffer: BufferNode): void {
   isPending = false
   isRunning = true
 
-  switch (renderMode) {
-    case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
-      flushBufferSyncPreferentially(buffer)
-      break
-    default:
-      flushBufferSyncPreferentially(buffer)
-      break
-  }
+  flushBufferSyncPreferentially(buffer)
   // TODO 考虑下是否等当前 buffer 全部执行完毕后一次性清空 buffer
 
   if (buffer === null) {
@@ -126,10 +118,10 @@ function flushBufferConsistentlyInEventLoop(buffer: BufferNode): void {
   // 1. 遍历 buffer 中所有 effect，根据所有 effect 的类型
   // 分析出本轮 event loop 采用哪种模式进行渲染更新
   let currentNode: BufferNode = buffer
-  let renderMode: number = RenderModes.SYNCHRONOUS
+  let renderMode: number = RenderEffectTypes.SYNC
   while (currentNode !== null) {
     if (currentNode.effect?.effectType === RenderEffectTypes.CONCURRENT) {
-      renderMode = RenderModes.CONCURRENT
+      renderMode = RenderEffectTypes.CONCURRENT
       break
     }
     currentNode = currentNode.next

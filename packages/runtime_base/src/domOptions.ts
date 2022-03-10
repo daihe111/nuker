@@ -32,6 +32,10 @@ export const isSVGTag = createMap(
 
 // dom 操作对外接口工具集
 export const domOptions = {
+  getElementById(id: string): Element {
+    return document.getElementById(id)
+  },
+
   insert: (child, parent, anchor) => {
     parent.insertBefore(child, anchor || null)
   },

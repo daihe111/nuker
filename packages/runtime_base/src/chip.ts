@@ -95,7 +95,7 @@ export interface Chip extends ChipCore {
   id: number // 节点编号 id (自增)
   ref: ChipRef
   key?: ChipKey
-  elm: Element | null
+  elm: Element | null // 虚拟节点对应的实际 dom 容器
   instance: ChipInstance | null
   directives?: unknown
   components?: unknown
@@ -129,9 +129,11 @@ export interface Chip extends ChipCore {
 
 // nuker 的虚拟根节点
 export interface ChipRoot extends Chip {
-  // 闲时任务队列
+  // chip 根节点
+  root: Chip
+  // 并发任务产生的闲时任务队列
   concurrentIdleJobs: ListAccessor<IdleJobUnit>
-  // 
+  // 同步任务产生的闲时任务队列
   syncIdleJobs: ListAccessor<IdleJobUnit>
   // 渲染描述载荷队列
   renderPayloads: ListAccessor<RenderPayloadNode>

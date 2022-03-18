@@ -32,8 +32,7 @@ import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectScheduler";
-import { ListAccessor } from "../../share/src/shareTypes";
-import { cacheIdleJob, replaceChipContext, performIdleWork, performIdleWorkSync, IdleTypes } from "./idle";
+import { cacheIdleJob, replaceChipContext, performIdleWork, IdleTypes } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 
 export type AppContent = | Component | Chip
@@ -129,7 +128,10 @@ export function render(
   // 执行离屏渲染，渲染完成后将内存中的根节点挂载到指定的 dom 容器中
   const root: Element = performRenderSync(chipRoot, chip)
   container = isString(container) ? domOptions.getElementById(container) : container
-  domOptions.appendChild(root, container)
+  if (container) {
+    domOptions.appendChild(root, container)
+  }
+
   return container
 }
 
@@ -180,7 +182,7 @@ export function performRenderSync(chipRoot: ChipRoot, chip: Chip): Element {
 }
 
 // 以异步可调度的方式执行渲染任务
-export function performRenderConcurrent(chipRoot: ChipRoot, chip: Chip) {
+export function performRenderConcurrent(chipRoot: ChipRoot, chip: Chip): void {
   registerOngoingChipWork(chipRoot, chip)
 }
 
@@ -252,14 +254,16 @@ export function performChipWork(
 // 为当前 chip 执行可供渲染用的相关准备工作
 export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot): void {
   switch (chip.chipType) {
+    // 原生节点
+    case ChipTypes.NATIVE_DOM:
+      initRenderWorkForElement(chip)
+      break
+    // 非原生节点，附带虚拟容器的节点: component / virtual chip
     case ChipTypes.CUSTOM_COMPONENT:
       initRenderWorkForComponent(chip)
       break
     case ChipTypes.RESERVED_COMPONENT:
       initRenderWorkForReservedComponent(chip)
-      break
-    case ChipTypes.NATIVE_DOM:
-      initRenderWorkForElement(chip)
       break
     case ChipTypes.CONDITION:
       initRenderWorkForConditionChip(chip, chipRoot)
@@ -315,7 +319,7 @@ export function completeChip(
 //    有可能会有优先级更高的任务插入 (如 user event)，因此
 //    更新阶段的纯 js 任务需要接入调度系统，然后所有的 dom 操作
 //    在 commit 阶段进行批量同步执行
-export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) {
+export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number): void {
   switch (mode) {
     case MountModes.SYNCHRONOUS:
       completeRenderWorkForChipSync(chipRoot, chip)
@@ -329,7 +333,10 @@ export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number) 
   }
 }
 
-// 初始化 component 类型节点的渲染工作
+/**
+ * 初始化 component 类型节点的渲染工作
+ * @param chip 
+ */
 export function initRenderWorkForComponent(chip: Chip): void {
   const instance: ComponentInstance = createComponentInstance((chip.tag as Component), chip)
   const { source, render } = chip.instance = instance
@@ -350,7 +357,7 @@ export function initRenderWorkForReservedComponent(chip: Chip): void {
 }
 
 // 初始化 element 类型节点的渲染工作: dom 容器创建
-export function initRenderWorkForElement(chip: Chip) {
+export function initRenderWorkForElement(chip: Chip): void {
   const { tag, isSVG, is } = chip
   chip.elm = domOptions.createElement(tag, isSVG, is)
 }
@@ -406,15 +413,21 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): vo
 }
 
 export function completeRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): void {
-  
+  mountElementForChip(chip)
 }
 
 export function completeRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): void {
-
+  mountElementForChip(chip)
 }
 
-// 完成 component 类型节点的渲染工作: 当前节点插入父 dom 容器
-export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot) {
+/**
+ * 完成 component 类型节点的渲染工作: 当前节点插入父 dom 容器
+ * @param chip 
+ * @param chipRoot 
+ */
+export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot): void {
+  mountElementForChip(chip)
+
   // 执行 mounted 生命周期，此时组件已执行完自身的渲染挂载工作
   if (chipRoot.mutableHookStrategy === HookInvokingStrategies.ON_IDLE) {
     registerLifecycleHook(
@@ -428,12 +441,17 @@ export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot) {
   }
 }
 
-// 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
+/**
+ * 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
+ * @param chipRoot 
+ * @param chip 
+ */
 export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): void {
   switch (chip.chipType) {
     case ChipTypes.NATIVE_DOM:
       completeRenderWorkForElement(chip, chipRoot)
       break
+    // 带虚拟容器的 chip 节点: component / virtual chip
     case ChipTypes.CUSTOM_COMPONENT:
       completeRenderWorkForComponent(chip, chipRoot)
       break
@@ -450,6 +468,21 @@ export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): v
 
 export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Chip): void {
 
+}
+
+/**
+ * 为 chip 挂载相匹配的 dom 节点
+ * @param chip 
+ */
+export function mountElementForChip(chip: Chip): Element {
+  let node: Chip = chip
+  while (true) {
+    if (node?.elm) {
+      return node.elm
+    }
+
+    node = node.lastChild
+  }
 }
 
 /**
@@ -527,10 +560,7 @@ export function createRenderEffectForProp(
   }, {
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
-    scheduler: !chipRoot.isStable && ((job: Effect) => {
-      // 将当前 effect 推入渲染任务缓冲区
-      pushRenderEffectToBuffer(job)
-    }),
+    scheduler: renderEffectScheduler,
     effectType: RenderEffectTypes.SYNC
   })
 
@@ -554,18 +584,12 @@ export function createRenderEffectForConditionChip(
     const children: ChipChildren = render()
     chip.children = children
     return { children }
-  }, (newData: DynamicRenderData, ctx: Effect) => {
-    // 新旧 children 进行 reconcile
-    return genReconcileEffects(
-      chip,
-      chipRoot,
-      newData,
-      ctx[RenderEffectFlags.END_IN_LOOP]
-    )
+  }, (newData: DynamicRenderData) => {
+    return handleChildJobOfRenderEffect(chip, chipRoot, newData)
   }, {
     lazy: true,
     collectWhenLazy: true,
-    scheduler: pushRenderEffectToBuffer
+    scheduler: renderEffectScheduler
   })
 
   cacheEffectToChip(e, chip)
@@ -590,6 +614,7 @@ export function createRenderEffectForIterableChip(
     const children: Chip[] = []
     const sourceLiteral: object = sourceGetter()
 
+    // todo 逻辑待补充
     if (sourceLiteral === sourceGetter.value) {
       // 可迭代数据源本身不会变
 
@@ -605,21 +630,54 @@ export function createRenderEffectForIterableChip(
     }
     chip.children = children
     return { children }
-  }, (newData: DynamicRenderData, ctx: Effect) => {
-    return genReconcileEffects(
-      chip,
-      chipRoot,
-      newData,
-      ctx[RenderEffectFlags.END_IN_LOOP]
-    )
+  }, (newData: DynamicRenderData) => {
+    return handleChildJobOfRenderEffect(chip, chipRoot, newData)
   }, {
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
-    scheduler: pushRenderEffectToBuffer, // 将渲染更新任务推入渲染任务缓冲区
+    scheduler: renderEffectScheduler,
     effectType: RenderEffectTypes.CONCURRENT
   })
 
   cacheEffectToChip(e, chip)
+}
+
+/**
+ * 渲染副作用自带的调度器
+ * 当渲染副作用被触发时，会优先执行该调度器对渲染副作用执行合适的调度
+ * @param effect 
+ */
+export function renderEffectScheduler(effect: Effect): void {
+  // BATCH_SYNC_PREFERENTIALLY 渲染模式下，将当前 effect 推入渲染任务缓冲区
+  // CONCURRENT 渲染模式下，将 effect 注册进调度系统，以保证渲染任务按照优先级策略调度执行
+  renderMode === NukerRenderModes.BATCH_SYNC_PREFERENTIALLY ?
+    pushRenderEffectToBuffer(effect):
+    registerJob(effect)
+}
+
+/**
+ * 处理渲染副作用的子任务
+ * @param chip 
+ * @param chipRoot 
+ * @param newData 
+ */
+export function handleChildJobOfRenderEffect(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  newData: DynamicRenderData
+): unknown {
+  // 新旧 children 进行 reconcile
+  const job: Function = genReconcileJob(
+    chip,
+    chipRoot,
+    newData
+  )
+  if (renderMode = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY) {
+    return job()
+  } else {
+    // 返回子任务
+    return job
+  }
 }
 
 /**
@@ -684,49 +742,54 @@ export function createRenderPayloadNode(
 }
 
 /**
- * 生成重新渲染时的副作用:
- * 1. 直接使用新的渲染数据进行 dom 渲染
- * 2. 需要进行 reconcile 进行 concurrent 渲染，生成 render payload，
- *    而不直接操作 dom 更新视图
+ * 需要进行 reconcile 进行 concurrent 渲染，生成 render payload，
+ * 而不直接操作 dom 更新视图
  * @param chip 
  * @param chipRoot 
  * @param renderData 
  * @param needCommit
  */
-export function genReconcileEffects(
+export function genReconcileJob(
   chip: Chip,
   chipRoot: ChipRoot,
-  renderData: DynamicRenderData,
-  needCommit?: boolean
-): void {
-  // renderData 是最新的渲染数据，可以是常规的动态属性、动态数据生成的全新子节点 chip
-  // 常规属性只有 props 部分，如果是动态数据生成的子节点，则会有 childrenRenderer 部分
-  // props 描述动态属性，childrenRenderer 描述动态子节点 (通常是动态数据生成的非稳定 dom 结构子树)
-  const { props, children } = renderData
-  const { wormhole, tag } = chip
-  if (props) {
-    // 存在动态属性，创建对应的 render payload，并接入调度系统
-    registerJob(() => {
-      const payload = createRenderPayloadNode(
-        wormhole?.elm,
-        null,
-        null,
-        RenderUpdateTypes.PATCH_PROP,
-        chip,
-        null,
-        (tag as string),
-        props
-      )
-      cacheRenderPayload(payload, chipRoot)
-      return (needCommit ? performCommitWork.bind(null, chipRoot) : null)
-    })
-  }
-
+  renderData: DynamicRenderData
+): Function {
+  // renderData 是最新的渲染数据
+  const { children } = renderData
   if (children) {
     // 存在动态子代节点，触发新旧子代节点的 diff 流程，并生产对应的 render payload
     const newChip = cloneChip(chip, chip.props, children)
+    newChip.wormhole = chip
     // trigger reconcile diff
-    performReconcileWork(chip, newChip, chipRoot)
+    const originalChip: Chip = newChip
+    const reconcileJob = (chip: Chip, lastChip: Chip): Function => {
+      // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
+      if (chip === originalChip) {
+        // 处理起始 chip 节点
+        if (chip.phase === ChipPhases.PENDING) {
+          const pointer: Chip = getPointerChip(chip.wormhole)
+          cacheIdleJob(
+            replaceChipContext.bind(null, chip, chip.wormhole, pointer),
+            chipRoot,
+            IdleTypes.CONCURRENT
+          )
+
+          // 返回处理下一组 chip 节点的子任务
+          const next: Chip = reconcile(chip, lastChip, chipRoot)
+          return reconcileJob.bind(null, next, chip, chipRoot)
+        } else {
+          // reconcile 执行完毕，如需执行 commit 任务，则返回 commit
+          // 子任务，否则当前任务返回 null 标记执行完毕
+          return performCommitWork.bind(null, chipRoot)
+        }
+      } else {
+        // 处理起始节点的子代节点
+        const next: Chip = reconcile(chip, lastChip, chipRoot)
+        return reconcileJob.bind(null, next, chip)
+      }
+    }
+
+    return reconcileJob.bind(null, newChip)
   }
 }
 
@@ -750,34 +813,7 @@ export function registerOngoingReconcileWork(
   chip: Chip,
   chipRoot: ChipRoot
 ): void {
-  const originalChip: Chip = chip
-  // 待注册进 scheduler 中的节点 reconcile 任务
-  function reconcileJob(chip: Chip, lastChip: Chip): Function {
-    // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
-    if (chip === originalChip) {
-      // 处理起始 chip 节点
-      if (chip.phase === ChipPhases.PENDING) {
-        const pointer: Chip = getPointerChip(chip.wormhole)
-        cacheIdleJob(
-          replaceChipContext.bind(null, chip, chip.wormhole, pointer),
-          chipRoot,
-          IdleTypes.CONCURRENT
-        )
-
-        // 返回处理下一组 chip 节点的子任务
-        const next: Chip = reconcile(chip, lastChip, chipRoot)
-        return reconcileJob.bind(null, next, chip, chipRoot)
-      } else {
-        // reconcile 执行完毕，如需执行 commit 任务，则返回 commit
-        // 子任务，否则当前任务返回 null 标记执行完毕
-        return performCommitWork.bind(null, chipRoot)
-      }
-    } else {
-      // 处理起始节点的子代节点
-      const next: Chip = reconcile(chip, lastChip, chipRoot)
-      return reconcileJob.bind(null, next, chip)
-    }
-  }
+  
 
   registerJob(reconcileJob.bind(null, chip))
 }

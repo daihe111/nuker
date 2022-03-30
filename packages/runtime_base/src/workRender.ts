@@ -18,7 +18,7 @@ import {
   createChip,
   ChipTag
 } from "./chip";
-import { isArray, isFunction, createEmptyObject, extend, isString } from "../../share/src";
+import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ } from "../../share/src";
 import {
   registerJob,
   JobNode,
@@ -29,7 +29,7 @@ import { ComponentInstance, Component, createComponentInstance } from "./compone
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
-import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
+import { createVirtualChipInstance, VirtualInstance, VirtualChipRender, isRootOfVirtualChip } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectScheduler";
 import { cacheIdleJob, replaceChipContext, performIdleWork, IdleTypes } from "./idle";
@@ -54,6 +54,11 @@ export interface DynamicRenderData {
 
 export const enum RenderFlags {
   IS_RENDER_PAYLOAD = '__n_isRenderPayload'
+}
+
+export interface NukerRenderOptions {
+  renderMode: number
+  mutableHookStrategy: number
 }
 
 export interface RenderPayloadNode {
@@ -92,6 +97,11 @@ export const enum RenderUpdateTypes {
   INVALID = -1 // 无效的更新类型
 }
 
+export const enum ReconcilingCellStatuses {
+  CHILD_MAY_SKIP = 0, // 子代节点的 reconcile 可能跳过
+  FULL_RECONCILE = 1 // 子代节点需要做无差别全量 reconcile
+}
+
 export const enum NukerRenderModes {
   // nuker 的默认全局渲染模式
   // 批量执行当前 event loop 中收集到的同步渲染副作用，concurrent 任务交给
@@ -105,19 +115,24 @@ export const enum NukerRenderModes {
 // 当前正在执行渲染工作的组件 instance
 export let currentRenderingInstance: ComponentInstance | VirtualInstance = null
 export let renderMode: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
-let schedulingEffect: JobNode // 当前正在调度中的渲染副作用
+const reconcilingCellStatusStack: number[] = [] // 描述协调块子代 dom 结构状态的栈结构
+let mutableHookStrategy: number // UI 变化后生命周期的触发策略
 
 /**
  * nuker 框架渲染总入口方法
+ * @param appContent 
+ * @param container 
+ * @param rm 
  */
 export function render(
   appContent: AppContent,
   container: Element | string,
-  rm: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
+  { renderMode: rm, mutableHookStrategy: mhs }: NukerRenderOptions
 ): Element {
-  renderMode = rm
+  renderMode = isNumber(rm) ? rm : NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
+  mutableHookStrategy = isNumber(mhs) ? mhs : HookInvokingStrategies.ON_IDLE
   const chip: Chip = createChip((appContent as ChipTag))
-  const chipRoot: ChipRoot = createChipRoot()
+  const chipRoot: ChipRoot = createChipRoot(chip)
   initScheduler({
     isDeepFirst: true,
     ...rm === NukerRenderModes.CONCURRENT ? {
@@ -429,7 +444,7 @@ export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot): 
   mountElementForChip(chip)
 
   // 执行 mounted 生命周期，此时组件已执行完自身的渲染挂载工作
-  if (chipRoot.mutableHookStrategy === HookInvokingStrategies.ON_IDLE) {
+  if (mutableHookStrategy === HookInvokingStrategies.ON_IDLE) {
     registerLifecycleHook(
       chipRoot,
       LifecycleHooks.MOUNTED,
@@ -613,19 +628,11 @@ export function createRenderEffectForIterableChip(
   const e = effect<DynamicRenderData>(() => {
     const children: Chip[] = []
     const sourceLiteral: object = sourceGetter()
-
-    // todo 逻辑待补充
-    if (sourceLiteral === sourceGetter.value) {
-      // 可迭代数据源本身不会变
-
-    } else {
-      // 可迭代数据源本身发生引用级变化
-
-    }
     setLiteralForDynamicValue(sourceLiteral, sourceGetter)
+    // 若根数据源本次渲染未发生变化，说明该 renderEffect 是由数据源的子代数据改变触发的
+    chip.someChildrenMaySkip = (sourceLiteral === sourceGetter.value)
     for (const key in sourceLiteral) {
       const child: Chip = (render(sourceLiteral[key]) as Chip)
-      child.maySkip = (sourceLiteral === sourceGetter.value)
       children.push(child)
     }
     chip.children = children
@@ -673,7 +680,7 @@ export function handleChildJobOfRenderEffect(
     newData
   )
   if (renderMode = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY) {
-    return job()
+    return registerJob(job as Job)
   } else {
     // 返回子任务
     return job
@@ -758,7 +765,7 @@ export function genReconcileJob(
   const { children } = renderData
   if (children) {
     // 存在动态子代节点，触发新旧子代节点的 diff 流程，并生产对应的 render payload
-    const newChip = cloneChip(chip, chip.props, children)
+    const newChip = cloneChip(chip, EMPTY_OBJ, children)
     newChip.wormhole = chip
     // trigger reconcile diff
     const originalChip: Chip = newChip
@@ -793,47 +800,88 @@ export function genReconcileJob(
   }
 }
 
-// diff 执行入口函数
-export function performReconcileWork(
-  oldChip: Chip,
-  newChip: Chip,
-  chipRoot: ChipRoot
-): void {
-  try {
-    newChip.wormhole = oldChip
-    registerOngoingReconcileWork(newChip, chipRoot)
-  } catch (e) {
-
-  }
-}
-
-// 将 chip 节点对的 reconcile 作为任务单元注册进调度系统，
-// 每个任务返回下一 chip 节点对做 reconcile 的子任务，以此类推
-export function registerOngoingReconcileWork(
-  chip: Chip,
-  chipRoot: ChipRoot
-): void {
-  
-
-  registerJob(reconcileJob.bind(null, chip))
-}
-
 /**
- * 检测 chip 的 reconcile 是否需要跳过
+ * 检测 chip 的 reconcile 是否可以跳过
  * @param chip
  */
-export function isSkipReconcile(chip: Chip): boolean {
-  // chip reconcile 跳过的条件，满足其一即可 (|):
+export function isChipSkipable(chip: Chip): boolean {
+  // chip reconcile 跳过的条件，满足其一即可:
   // 1. 节点本身为静态，且距离当前节点最近的 chip block 具有稳定的子代结构
   // 2. 可迭代数据生成的相似节点对 (key 相同代表对应数据源未发生变化)，且可迭代数据源本身无引用级变化
   return Boolean(
-    ((chip.compileFlags & CompileFlags.STATIC) &&
-    (currentRenderingInstance.chip.compileFlags & CompileFlags.PREDICTABLE)) ||
-    (chip.maySkip && chip.wormhole)
+    chip.wormhole &&
+    ((getCurrentReconcilingCellStatus() === ReconcilingCellStatuses.CHILD_MAY_SKIP &&
+    chip.compileFlags & CompileFlags.COMPLETE_STATIC) ||
+    (chip.parent.someChildrenMaySkip && chip.key))
   )
 }
 
-// 每个 chip 节点对的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
+/**
+ * 检测 chip 节点本身是否可直接跳过
+ * @param chip 
+ */
+export function isChipItselfSkipable(chip: Chip): boolean {
+  return Boolean(
+    chip.wormhole &&
+    ((getCurrentReconcilingCellStatus() === ReconcilingCellStatuses.CHILD_MAY_SKIP &&
+    chip.compileFlags & CompileFlags.STATIC) ||
+    chip.compileFlags & CompileFlags.RECONCILE_BLOCK)
+  )
+}
+
+/**
+ * 入栈协调块的结构状态信息，并作为当前协调块的结构状态
+ * @param status 
+ */
+export function pushReconcilingCellStatus(status: number): number {
+  reconcilingCellStatusStack.push(status)
+  return status
+}
+
+/**
+ * 出栈协调块的结构状态信息，结构状态恢复到父级状态
+ */
+export function popReconcilingCellStatus(): number {
+  return reconcilingCellStatusStack.pop()
+}
+
+/**
+ * 获取当前所在协调块的结构状态
+ */
+export function getCurrentReconcilingCellStatus(): number {
+  return reconcilingCellStatusStack[reconcilingCellStatusStack.length - 1]
+}
+
+/**
+ * 设置当前协调单元对应的 dom 结构状态信息
+ * @param chip 
+ */
+export function setReconcilingCellStatus(chip: Chip): number {
+  const type: number = chip.parent.chipType
+  if (type === ChipTypes.CONDITION) {
+    return pushReconcilingCellStatus(ReconcilingCellStatuses.FULL_RECONCILE)
+  } else if (type === ChipTypes.FRAGMENT) {
+    return pushReconcilingCellStatus(ReconcilingCellStatuses.CHILD_MAY_SKIP)
+  }
+}
+
+/**
+ * 将协调单元的 dom 结构状态恢复到上一个状态
+ * @param chip 
+ */
+export function resetReconcilingCellStatus(chip: Chip): void {
+  const type: number = chip.parent.chipType
+  if (type === ChipTypes.CONDITION || type === ChipTypes.FRAGMENT) {
+    popReconcilingCellStatus()
+  }
+}
+
+/**
+ * 每个 chip 节点对的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
+ * @param chip 
+ * @param lastChip 
+ * @param chipRoot 
+ */
 export function reconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip {
   // 下一组要处理的 chip 节点对
   let nextChip: Chip
@@ -861,12 +909,20 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
   chip.phase = ChipPhases.INITIALIZE
   const componentInst: ComponentInstance = (chip.chipType === ChipTypes.CUSTOM_COMPONENT) ? (chip.instance as ComponentInstance) : null
 
+  // 更新当前协调单元的子代 dom 结构状态
+  setReconcilingCellStatus(chip)
+
   // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
   // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
   let nextChip: Chip
-  if (isSkipReconcile(chip)) {
+  if (isChipSkipable(chip)) {
+    // chip 及其子代全部可跳过
     nextChip = completeReconcile(chip, lastChip, chipRoot, true)
+  } else if (isChipItselfSkipable(chip)) {
+    // chip 节点本身可跳过 reconcile
+    chip.skipable = true
   } else {
+    // chip 节点不可跳过 reconcile
     initVirtualChip(chip, chipRoot)
     const { children, wormhole } = chip
     const lastChild: Chip = getLastChipChild(children)
@@ -934,7 +990,7 @@ export function completeReconcile(
   chip.phase = ChipPhases.COMPLETE
 
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
-  if (!isSkipable) {
+  if (!isSkipable && !chip.skipable) {
     // 优先处理子节点事务，根据收集的待删除子节点生成对应的 render payload
     if (hasDeletions(chip)) {
       genRenderPayloadsForDeletions(chip.deletions, chipRoot)
@@ -964,7 +1020,7 @@ export function completeReconcile(
     }
   }
 
-  // 获取下一个需要处理的 chip
+  // 获取下一组需要处理的 chip 节点对
   let sibling: Chip = chip.prevSibling
   if (sibling === null) {
     // 尝试创建有效 sibling 节点
@@ -975,16 +1031,22 @@ export function completeReconcile(
     }
   }
 
+  let next: Chip
   if (sibling) {
     // 如果存在同级兄弟节点，则兄弟节点作为下一个要处理的 chip 节点
     chip.prevSibling = sibling
     sibling.parent = chip.parent
-    return sibling
+    next = sibling
   } else {
     // 无同级兄弟节点，表明与当前节点同级的节点全部处理完毕，则开始
     // 回溯，以当前节点的父节点作为下一个待处理的 chip 节点
-    return chip.parent
+    next = chip.parent
   }
+
+  // 根据 chip 类型恢复到上一个协调单元的 dom 结构状态
+  resetReconcilingCellStatus(chip)
+
+  return next
 }
 
 /**
@@ -1041,11 +1103,10 @@ export function initConditionChip(chip: Chip, chipRoot: ChipRoot): Chip {
  */
 export function initIterableChip(chip: Chip, chipRoot: ChipRoot): Chip {
   const {
-    source, // 响应式数据源
-    sourceKey, // 如果存在父级数据源，则当前 iterable chip 需要通过 sourceKey 访问可遍历源数据
+    sourceGetter, // 数据源 getter，数据源本身可能为根级响应式数据，也可能为其他响应式数据源的子级数据
     render // 模板渲染器
   } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-  createRenderEffectForIterableChip(chip, chipRoot, render, source, sourceKey)
+  createRenderEffectForIterableChip(chip, chipRoot, render, sourceGetter)
 
   return chip
 }

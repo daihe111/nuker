@@ -109,14 +109,18 @@ export function performIdleWork(chipRoot: ChipRoot, type: number): boolean {
 // 包括其子代 chip 仍然会保持对全局 effect 的引用，因此旧 chip 对应的内存
 // 不会被 GC 及时回收，如果要及时释放内存，需要深度遍历旧的 chip，这样会多一次
 // 遍历处理成本，因此暂不采用该方案进行局部 chip tree 的更新
-export function updateSubChipTree(chip: Chip): Chip {
+export function updateSubChipTree(chip: Chip, anchorContext: Chip): Chip {
   const oldChip: Chip = chip.wormhole
-  const { prevSibling, nextSibling, parent }: Chip = oldChip
-  oldChip.parent = oldChip.prevSibling = oldChip.nextSibling = null
-  parent.firstChild = prevSibling.nextSibling = nextSibling.prevSibling = chip
-  chip.parent = parent
-  chip.prevSibling = prevSibling
-  chip.nextSibling = nextSibling
+  if (anchorContext.lastChild === oldChip) {
+    anchorContext.lastChild = chip
+    chip.parent = anchorContext
+    chip.prevSibling = oldChip.prevSibling
+  } else {
+    anchorContext.prevSibling = chip
+    chip.parent = oldChip.parent
+    chip.prevSibling = oldChip.prevSibling
+  }
+
   return chip
 }
 

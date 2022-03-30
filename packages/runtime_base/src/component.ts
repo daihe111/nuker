@@ -140,12 +140,3 @@ export function initLifecycleHooks(instance: ComponentInstance, source?: object)
 export function reuseComponentInstance(instance: ComponentInstance, chipContainer: Chip): ComponentInstance {
 
 }
-
-// 组件初始化需要做的事情：依赖收集
-export function initComponent(chip: Chip, instance: ComponentInstance) {
-  // 组件子节点树
-  const subTree = instance.render(instance)
-  chip.subTree = subTree
-  const firstChild = subTree[0]
-  
-}

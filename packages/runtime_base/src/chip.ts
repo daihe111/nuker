@@ -4,7 +4,7 @@ import {
   isReservedTag,
   isReservedComponentTag
 } from './domOptions';
-import { isObject, isArray, isString, isNumber, isFunction } from '../../share/src';
+import { isObject, isArray, isString, isNumber, isFunction, extend } from '../../share/src';
 import { RenderPayloadNode, ChildrenRenderer } from "./workRender";
 import { VirtualInstance, VirtualOptions } from "./virtualChip";
 import { ListAccessor } from "../../share/src/shareTypes";
@@ -89,17 +89,17 @@ export type ChipKey = string | number | symbol
 // 下文持有的状态进行清理 (节点所属 effects 一定要清理，防止后续
 // 操作数据时错误触发无效的 effect)
 export interface Chip extends ChipCore {
-  [ChipFlags.IS_CHIP]: true
-  [ChipFlags.IS_RECONCILE_SCOPE]?: boolean // 标识是否是局部 diff 的 chip 域
+  readonly [ChipFlags.IS_CHIP]: true
 
-  id: number // 节点编号 id (自增)
+  readonly id: number // 节点编号 id (自增)
   ref: ChipRef
   key?: ChipKey
   elm: Element | null // 虚拟节点对应的实际 dom 容器
   instance: ChipInstance | null
   directives?: unknown
   components?: unknown
-  maySkip?: boolean // chip 及其子代在 reconcile 阶段有可能被跳过
+  someChildrenMaySkip?: true // chip 的部分子代节点在 reconcile 阶段有可能被跳过，仅可迭代 fragment 会持有该属性
+  skipable?: true // 标记 chip 节点本身是否可跳过 reconcile
   // 当前已转化为 chip 的 Chip child 索引，用于辅助 chip 树
   // 遍历过程中动态创建新的 chip
   currentChildIndex?: number
@@ -128,7 +128,7 @@ export interface Chip extends ChipCore {
 }
 
 // nuker 的虚拟根节点
-export interface ChipRoot extends Chip {
+export interface ChipRoot {
   // chip 根节点
   root: Chip
   // 并发任务产生的闲时任务队列
@@ -139,13 +139,6 @@ export interface ChipRoot extends Chip {
   renderPayloads: ListAccessor<RenderPayloadNode>
   // 当前渲染周期内缓存的已失效 effect，这些 effect 将在 idle 阶段被释放
   abandonedEffects: ListAccessor<ChipEffectUnit>
-  // chip 树结构是否稳定
-  isStable: boolean
-  // UI 变化后生命周期的触发策略
-  mutableHookStrategy: number
-  // 是否开启更新调度，开启后会对渲染副作用进行基于执行优先级的调度
-  // 但会有一定的性能损失，默认不开启
-  openUpdaterSchedule?: boolean
 
   // 改变视图生命周期的缓存队列
   [LifecycleHooks.MOUNTED]?: ListAccessor<LifecycleUnit>
@@ -161,10 +154,6 @@ export function updateChip(chip: Chip, payload: object): Chip {
   }
 
   return null
-}
-
-export function removeChip(chip: Chip): boolean {
-
 }
 
 export function parseChipType(tag: ChipTag): number {
@@ -183,19 +172,26 @@ export function parseChipType(tag: ChipTag): number {
 }
 
 export function cloneChip(chip: Chip, props: object, children: ChipChildren): Chip {
-  return Object.assign({}, {
+  return {
+    [ChipFlags.IS_CHIP]: true,
     tag: chip.tag,
-    data: Object.assign({}, chip.data),
     key: chip.key,
-    children: Object.assign({}, chip.children),
+    chipType: chip.chipType,
+    props: extend({}, chip.props, props),
+    children: children || chip.children,
     parent: chip.parent,
-    elm: chip.elm,
-    isComponent: chip.isComponent
-  });
+    id: chip.id,
+    instance: chip.instance,
+    ref: chip.ref,
+    prevSibling: chip.prevSibling,
+    nextSibling: chip.nextSibling,
+    wormhole: chip.wormhole,
+    elm: chip.elm
+  }
 }
 
 export function isSameChip(vn1: Chip, vn2: Chip) {
-  return vn1.tag === vn2.tag && vn1.key === vn2.key;
+  return vn1.tag === vn2.tag && vn1.key === vn2.key
 }
 
 /**
@@ -238,12 +234,21 @@ export function isLastChipChild(chip: Chip, children: ChipChildren): boolean {
  * @param child 
  * @param parent 
  */
-export function isLastChildOfChip(child: Chip, parent: Chip): boolean {
+export function isLastChildOfChip(child: Chip): boolean {
   return (child.parent.lastChild === child)
 }
 
-export function createChipRoot(): ChipRoot {
-
+export function createChipRoot(root: Chip): ChipRoot {
+  return {
+    root,
+    concurrentIdleJobs: null,
+    syncIdleJobs: null,
+    renderPayloads: null,
+    abandonedEffects: null,
+    // 改变视图生命周期的缓存队列
+    [LifecycleHooks.MOUNTED]: null,
+    [LifecycleHooks.UPDATED]: null
+  }
 }
 
 export function createChip(
@@ -264,10 +269,11 @@ export function createChip(
     chipType,
     directives: [],
     components: [],
-    parent: null
-    prevSibling: null
-    nextSibling: null
-    firstChild: null
+    parent: null,
+    prevSibling: null,
+    nextSibling: null,
+    firstChild: null,
+    lastChild: null,
     wormhole: null
   }
 }

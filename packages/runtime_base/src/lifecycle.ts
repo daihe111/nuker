@@ -79,56 +79,56 @@ export function registerLifecycleHook(
 
 export function init(
   hook: Function,
-  instance: ComponentInstance = currentRenderingInstance
+  instance: ComponentInstance = (currentRenderingInstance as ComponentInstance)
 ): void {
   registerLifecycleHook(instance, LifecycleHooks.INIT, hook)
 }
 
 export function willMount(
   hook: Function,
-  instance: ComponentInstance = currentRenderingInstance
+  instance: ComponentInstance = (currentRenderingInstance as ComponentInstance)
 ): void {
   registerLifecycleHook(instance, LifecycleHooks.WILL_MOUNT, hook)
 }
 
 export function mounted(
   hook: Function,
-  instance: ComponentInstance = currentRenderingInstance
+  instance: ComponentInstance = (currentRenderingInstance as ComponentInstance)
 ): void {
   registerLifecycleHook(instance, LifecycleHooks.MOUNTED, hook)
 }
 
 export function willUpdate(
   hook: Function,
-  instance: ComponentInstance = currentRenderingInstance
+  instance: ComponentInstance = (currentRenderingInstance as ComponentInstance)
 ): void {
   registerLifecycleHook(instance, LifecycleHooks.WILL_UPDATE, hook)
 }
 
 export function updated(
   hook: Function,
-  instance: ComponentInstance = currentRenderingInstance
+  instance: ComponentInstance = (currentRenderingInstance as ComponentInstance)
 ): void {
   registerLifecycleHook(instance, LifecycleHooks.UPDATED, hook)
 }
 
 export function willUnmount(
   hook: Function,
-  instance: ComponentInstance = currentRenderingInstance
+  instance: ComponentInstance = (currentRenderingInstance as ComponentInstance)
 ): void {
   registerLifecycleHook(instance, LifecycleHooks.WILL_UNMOUNT, hook)
 }
 
 export function unmounted(
   hook: Function,
-  instance: ComponentInstance = currentRenderingInstance
+  instance: ComponentInstance = (currentRenderingInstance as ComponentInstance)
 ): void {
   registerLifecycleHook(instance, LifecycleHooks.UNMOUNTED, hook)
 }
 
 export function invokeLifecycle(
   hookName: string,
-  instance: ComponentInstance | ChipRoot = currentRenderingInstance
+  instance: ComponentInstance | ChipRoot = (currentRenderingInstance as ComponentInstance)
 ): void {
   const hooks: ListAccessor<LifecycleUnit> = instance[hookName]
   let currentUnit: LifecycleUnit = hooks.first

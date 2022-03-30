@@ -97,36 +97,46 @@ export const enum CompileFlags {
   DEV_ROOT_FRAGMENT = 1 << 11,
 
   /**
-   * SPECIAL FLAGS -------------------------------------------------------------
-   * Special flags are negative integers. They are never matched against using
-   * bitwise operators (bitwise matching should only happen in branches where
-   * patchFlag > 0), and are mutually exclusive. When checking for a special
-   * flag, simply check patchFlag === FLAG.
+   * 表示节点本身是静态的
    */
 
   STATIC = 1 << 12,
 
   /**
-   * 渲染块 (block) flags
-   * 可以作为一个渲染块的渲染区域如下:
-   * 1. 组件 2. 条件、可迭代节点 3. 其他具有独立上下文环境的特殊节点
+   * 节点及其子代节点是完全静态的
    */
+  COMPLETE_STATIC = 1 << 13,
+  
+  /**
+   * 协调单元
+   * 在协调过程中通过检测节点最近的协调单元来决定改节点的协调是否可跳过
+   */
+  RECONCILE_CELL = 1 << 14,
 
   /**
-   * 子代结构不可预测的 chip，如条件节点，你完全无法预测不同条件下会渲染出什么样的子代结构
+   * 子代结构完全不可预测的 chip，如条件节点，你完全无法预测不同条件下会渲染出什么样的子代结构，
+   * 由拥有该标记的 chip 产生的 reconcile 中，全部子代节点均不能跳过 reconcile
    */
-  UNPREDICTABLE = 1 << 13,
+  UNPREDICTABLE = 1 << 15,
 
   /**
-   * 子代结构不完全可预测的 chip
-   * 如可迭代节点就是部分可预测的，其整体结构可变，但是每一个 item 的渲染结构是相同的
+   * 子代结构完全可预测的 chip，持有该标记的 chip 直接更新 dom 属性，不会触发 reconcile
    */
-  INCOMPLETE_PREDICTABLE = 1 << 14,
+  PREDICTABLE = 1 << 16,
 
   /**
-   * 自带结构完全可预测的 chip
+   * 子代节点的结构部分可预测，如可迭代节点的单元渲染模板
    */
-  PREDICTABLE = 1 << 15,
+  PARTIAL_PREDICTABLE = 1 << 17,
+
+  /**
+   * 渲染协调块
+   * 可以作为一个渲染协调块的渲染区域如下:
+   * 1. 条件、可迭代节点对应的虚拟容器节点 2. 其他具有独立上下文环境的特殊节点
+   * 渲染协调块拥有自己的渲染数据与渲染器，当上下文的数据发生变化时，会发起以当前
+   * 块为基准的新老节点树协调行为
+   */
+  RECONCILE_BLOCK = 1 << 18,
 
   /**
    * Indicates a hoisted static vnode. This is a hint for hydration to skip

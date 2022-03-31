@@ -21,7 +21,6 @@ import {
 import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ } from "../../share/src";
 import {
   registerJob,
-  JobNode,
   Job,
   initScheduler
 } from "./scheduler";
@@ -34,6 +33,7 @@ import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectScheduler";
 import { cacheIdleJob, replaceChipContext, performIdleWork, IdleTypes } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
+import { currentEventPriority } from "../../runtime_dom/src/event";
 
 export type AppContent = | Component | Chip
 
@@ -196,11 +196,20 @@ export function performRenderSync(chipRoot: ChipRoot, chip: Chip): Element {
   return rootContainer
 }
 
-// 以异步可调度的方式执行渲染任务
+/**
+ * 以异步可调度的方式执行渲染任务
+ * @param chipRoot 
+ * @param chip 
+ */
 export function performRenderConcurrent(chipRoot: ChipRoot, chip: Chip): void {
   registerOngoingChipWork(chipRoot, chip)
 }
 
+/**
+ * 将 chip 节点树渲染任务注册进调度系统
+ * @param chipRoot 
+ * @param chip 
+ */
 export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip): void {
   function chipPerformingJob(chipRoot: ChipRoot, chip: Chip): Function {
     // get next chip to working
@@ -659,7 +668,8 @@ export function renderEffectScheduler(effect: Effect): void {
   // CONCURRENT 渲染模式下，将 effect 注册进调度系统，以保证渲染任务按照优先级策略调度执行
   renderMode === NukerRenderModes.BATCH_SYNC_PREFERENTIALLY ?
     pushRenderEffectToBuffer(effect):
-    registerJob(effect)
+    // concurrent 渲染模式下，根据当前事件优先级将 renderEffect 作为任务注册进调度系统
+    registerJob(effect, currentEventPriority)
 }
 
 /**
@@ -680,6 +690,8 @@ export function handleChildJobOfRenderEffect(
     newData
   )
   if (renderMode = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY) {
+    // BATCH_SYNC_PREFERENTIALLY 渲染模式下以调度系统默认优先级将
+    // reconcile 任务注册入调度系统
     return registerJob(job as Job)
   } else {
     // 返回子任务
@@ -1333,13 +1345,4 @@ export function cacheRenderPayload(
   }
 
   return payload
-}
-
-/**
- * 在渲染任务注册进调度系统前，先根据新旧任务的优先级进行 PK 调度
- * @param jobContainer 
- * @param job 
- */
-export function scheduleRenderJob(job: Job, priority: number): void {
-  registerJob(job, priority,)
 }

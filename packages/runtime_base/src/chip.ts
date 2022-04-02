@@ -107,7 +107,7 @@ export interface Chip extends ChipCore {
   // 存储节点对应的所有 effect，用于 chip 上下文销毁时对 effect 
   // 进行靶向移除
   effects?: ListAccessor<ChipEffectUnit>
-  renderPayloads?: ListAccessor<RenderPayloadNode>
+  renderPayloads?: ListAccessor<RenderPayloadNode> // 用于存储新旧子节点匹配过程中产生的 render payload，如节点移动行为
 
   // pointers
   // chip 树中仅包含动态节点，在生成 chip 树时会将 dom 树

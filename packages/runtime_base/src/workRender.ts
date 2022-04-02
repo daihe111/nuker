@@ -275,7 +275,11 @@ export function performChipWork(
   }
 }
 
-// 为当前 chip 执行可供渲染用的相关准备工作
+/**
+ * 为当前 chip 执行可供渲染用的相关准备工作
+ * @param chip 
+ * @param chipRoot 
+ */
 export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot): void {
   switch (chip.chipType) {
     // 原生节点
@@ -297,10 +301,16 @@ export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot): void {
   }
 }
 
-// chip 是 leaf node，完成对该节点的所有处理工作，并标记为 complete
-// 返回下一个要处理的 chip 节点
-// 同级兄弟节点的处理顺序为从尾到头，以保证靠近尾部的节点优先渲染，渲染
-// 靠近头部的节点时可以获取到后面节点的 dom 作为插入锚点
+/**
+ * chip 是 leaf node，完成对该节点的所有处理工作，并标记为 complete
+ * 返回下一个要处理的 chip 节点
+ * 同级兄弟节点的处理顺序为从尾到头，以保证靠近尾部的节点优先渲染，渲染
+ * 靠近头部的节点时可以获取到后面节点的 dom 作为插入锚点
+ * @param chipRoot 
+ * @param chip 
+ * @param mode 
+ * @param callback 
+ */
 export function completeChip(
   chipRoot: ChipRoot,
   chip: Chip,
@@ -335,14 +345,19 @@ export function completeChip(
   }
 }
 
-// 依赖收集，生成触发 dom 实际变化的副作用:
-// 1. 首次渲染: 不会生成渲染描述，而是直接通过 chip 中的信息
-//    进行 dom 的实际渲染
-// 2. 更新阶段: 会先生成节点对应的更新渲染描述 payload，因为
-//    非首次渲染时 reconcile 任务不再是优先级最高的任务，因为
-//    有可能会有优先级更高的任务插入 (如 user event)，因此
-//    更新阶段的纯 js 任务需要接入调度系统，然后所有的 dom 操作
-//    在 commit 阶段进行批量同步执行
+/**
+ * 依赖收集，生成触发 dom 实际变化的副作用:
+ * 1. 首次渲染: 不会生成渲染描述，而是直接通过 chip 中的信息
+ *    进行 dom 的实际渲染
+ * 2. 更新阶段: 会先生成节点对应的更新渲染描述 payload，因为
+ *    非首次渲染时 reconcile 任务不再是优先级最高的任务，因为
+ *    有可能会有优先级更高的任务插入 (如 user event)，因此
+ *    更新阶段的纯 js 任务需要接入调度系统，然后所有的 dom 操作
+ *    在 commit 阶段进行批量同步执行
+ * @param chipRoot 
+ * @param chip 
+ * @param mode 
+ */
 export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number): void {
   switch (mode) {
     case MountModes.SYNCHRONOUS:
@@ -975,7 +990,7 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
       chip.currentChildIndex = (isArray(children) ? (children.length - 1) : 0)
       // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
       // 通过新旧节点间的映射关系进行节点对的 diff
-      mapChipChildren(wormhole.children, children)
+      matchChipChildren(wormhole.children, children)
       nextChip = lastChild
     } else {
       nextChip = completeReconcile(chip, lastChip, chipRoot)
@@ -1007,7 +1022,10 @@ export function completeReconcile(
     if (hasDeletions(chip)) {
       genRenderPayloadsForDeletions(chip.deletions, chipRoot)
     }
+    // 生成当前节点 diff 的 render payload 并入队
     reconcileToGenRenderPayload(chip, auxiliaryChip, chipRoot)
+    // 入队深度遍历阶段缓存在当前节点上的 render payload
+    cacheRenderPayload(chip.renderPayloads.first, chipRoot)
 
     // 缓存视图改变的生命周期 (mounted | updated)
     if (chip.chipType === ChipTypes.CUSTOM_COMPONENT) {
@@ -1123,10 +1141,16 @@ export function initIterableChip(chip: Chip, chipRoot: ChipRoot): Chip {
   return chip
 }
 
-// 建立 chip 子节点之间的映射关系，但不引入其他副作用，生成 render payload
-// 需要在独立的时机去做，避免任务单元变得 CPU-bound
-export function mapChipChildren(oldChildren: ChipChildren, newChildren: ChipChildren): void {
-
+/**
+ * 建立 chip 子节点之间的映射关系，并生成部分子代节点对应的 render payload
+ * 主要涉及子节点的删除、移动
+ * @param oldChildren 
+ * @param newChildren 
+ */
+export function matchChipChildren(oldChildren: ChipChildren, newChildren: ChipChildren): void {
+  // todo 待删除子节点 render payload 创建、收容；
+  // 子节点移动创建 render payload，并将其挂载到需要移动的 chip 上，等该
+  // chip 进入回溯阶段再进行 render payload 的派发
 }
 
 // 缓存要删除的 chip
@@ -1326,18 +1350,18 @@ export function cacheAbandonedEffect(
  */
 export function cacheRenderPayload(
   payload: RenderPayloadNode | RenderPayloadNode[],
-  chipRoot: ChipRoot
+  chip: ChipRoot | Chip
 ): RenderPayloadNode | RenderPayloadNode[] {
   if (isArray(payload)) {
     for (let i = 0; i < payload.length; i++) {
-      cacheRenderPayload(payload[i], chipRoot)
+      cacheRenderPayload(payload[i], chip)
     }
   } else {
-    const payloads = chipRoot.renderPayloads
+    const payloads = chip.renderPayloads
     if (payloads) {
       payloads.last = payloads.last.next = payload
     } else {
-      chipRoot.renderPayloads = {
+      chip.renderPayloads = {
         first: payload,
         last: payload
       }

@@ -34,7 +34,7 @@ export type CollectionTypes = MapTypes | SetTypes
 export type IterableTypes = Map<any, any> | Set<any>
 
 const collectionInstrumentations: Record<string, Function> = {
-  get(key: any, target: MapTypes, isShallow: boolean) {
+  get(target: MapTypes, isShallow: boolean, key: any) {
     // TODO 需要区分 key 和 rawKey 的行为表现
     if (isShallow) {
       collect(target, key, ReactiveActionTypes.GET)
@@ -45,7 +45,7 @@ const collectionInstrumentations: Record<string, Function> = {
     collect(target, key, ReactiveActionTypes.GET)
     return reactive(target.get(key), { isShallow })
   },
-  set(key: any, value: any, target: MapTypes, isShallow: boolean) {
+  set(target: MapTypes, isShallow: boolean, key: any, value: any) {
     let oldValue = target.get(key)
     if (isShallow) {
       if (!target.has(key)) {
@@ -75,7 +75,7 @@ const collectionInstrumentations: Record<string, Function> = {
     }
     return target.set(key, value)
   },
-  has(key: any, target: CollectionTypes, isShallow: boolean) {
+  has(target: CollectionTypes, isShallow: boolean, key: any) {
     let hasKey = target.has(key)
     if (isShallow) {
       if (hasKey) {
@@ -92,7 +92,7 @@ const collectionInstrumentations: Record<string, Function> = {
     }
     return hasKey
   },
-  add(value: unknown, target: SetTypes, isShallow: boolean) {
+  add(target: SetTypes, isShallow: boolean, value: unknown) {
     if (isShallow) {
       if (!target.has(value)) {
         dispatch(target, value, ReactiveActionTypes.ADD, undefined, value)
@@ -109,7 +109,7 @@ const collectionInstrumentations: Record<string, Function> = {
     dispatch(target, value, ReactiveActionTypes.ADD, undefined, value)
     return target.add(value)
   },
-  delete(key: any, target: CollectionTypes, isShallow: boolean) {
+  delete(target: CollectionTypes, isShallow: boolean, key: any) {
     let hasKey = target.has(key)
     if (isShallow) {
       if (hasKey) {
@@ -127,7 +127,7 @@ const collectionInstrumentations: Record<string, Function> = {
     
     return target
   },
-  clear(isShallow: boolean, target: IterableTypes) {
+  clear(target: IterableTypes, isShallow: boolean) {
     if (target.size) {
       target.forEach((value: any, key: any) => {
         dispatch(

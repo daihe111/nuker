@@ -103,13 +103,16 @@ export const enum ReconcilingCellStatuses {
 }
 
 export const enum NukerRenderModes {
+  // 每个 event loop 结束时批量执行当前 event loop 收集的渲染任务，所有渲染任务
+  // 一次性同步执行完，中途不可打断
+  BATCH_SYNC = 0,
   // nuker 的默认全局渲染模式
   // 批量执行当前 event loop 中收集到的同步渲染副作用，concurrent 任务交给
   // 任务调度器去进行调度，由于调度系统存在时间片，因此后续 event loop 中的
   // 同步渲染任务可以中途插入执行，但后续的 concurrent 任务会按顺序进行调度
-  BATCH_SYNC_PREFERENTIALLY = 0,
+  BATCH_SYNC_PREFERENTIALLY = 1,
   // 并发渲染模式，根据每个渲染副作用的优先级进行调度，决定渲染任务执行的时机、顺序
-  CONCURRENT = 1
+  CONCURRENT = 2
 }
 
 // 当前正在执行渲染工作的组件 instance
@@ -318,7 +321,7 @@ export function completeChip(
   callback?: (chip: Chip) => void
 ): Chip {
   chip.phase = ChipPhases.COMPLETE
-  genMutableEffects(chipRoot, chip, mode)
+  dispatchMutableEffects(chipRoot, chip, mode)
 
   // 计算下一个要处理的节点
   let sibling = chip.prevSibling
@@ -346,19 +349,12 @@ export function completeChip(
 }
 
 /**
- * 依赖收集，生成触发 dom 实际变化的副作用:
- * 1. 首次渲染: 不会生成渲染描述，而是直接通过 chip 中的信息
- *    进行 dom 的实际渲染
- * 2. 更新阶段: 会先生成节点对应的更新渲染描述 payload，因为
- *    非首次渲染时 reconcile 任务不再是优先级最高的任务，因为
- *    有可能会有优先级更高的任务插入 (如 user event)，因此
- *    更新阶段的纯 js 任务需要接入调度系统，然后所有的 dom 操作
- *    在 commit 阶段进行批量同步执行
+ * 根据 chip 节点中纯数据层面信息派发对应的视图渲染行为
  * @param chipRoot 
  * @param chip 
  * @param mode 
  */
-export function genMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number): void {
+export function dispatchMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number): void {
   switch (mode) {
     case MountModes.SYNCHRONOUS:
       completeRenderWorkForChipSync(chipRoot, chip)
@@ -654,7 +650,7 @@ export function createRenderEffectForIterableChip(
     const sourceLiteral: object = sourceGetter()
     setLiteralForDynamicValue(sourceLiteral, sourceGetter)
     // 若根数据源本次渲染未发生变化，说明该 renderEffect 是由数据源的子代数据改变触发的
-    chip.someChildrenMaySkip = (sourceLiteral === sourceGetter.value)
+    chip.childMaySkip = (sourceLiteral === sourceGetter.value)
     for (const key in sourceLiteral) {
       const child: Chip = (render(sourceLiteral[key]) as Chip)
       children.push(child)
@@ -839,7 +835,7 @@ export function isChipSkipable(chip: Chip): boolean {
     chip.wormhole &&
     ((getCurrentReconcilingCellStatus() === ReconcilingCellStatuses.CHILD_MAY_SKIP &&
     chip.compileFlags & CompileFlags.COMPLETE_STATIC) ||
-    (chip.parent.someChildrenMaySkip && chip.key))
+    (chip.parent.childMaySkip && chip.key))
   )
 }
 
@@ -934,8 +930,6 @@ export function reconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip 
  */
 export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip {
   chip.phase = ChipPhases.INITIALIZE
-  const componentInst: ComponentInstance = (chip.chipType === ChipTypes.CUSTOM_COMPONENT) ? (chip.instance as ComponentInstance) : null
-
   // 更新当前协调单元的子代 dom 结构状态
   setReconcilingCellStatus(chip)
 
@@ -944,46 +938,20 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
   let nextChip: Chip
   if (isChipSkipable(chip)) {
     // chip 及其子代全部可跳过
-    nextChip = completeReconcile(chip, lastChip, chipRoot, true)
-  } else if (isChipItselfSkipable(chip)) {
-    // chip 节点本身可跳过 reconcile
     chip.skipable = true
+    nextChip = completeReconcile(chip, lastChip, chipRoot)
   } else {
-    // chip 节点不可跳过 reconcile
-    initVirtualChip(chip, chipRoot)
-    const { children, wormhole } = chip
-    const lastChild: Chip = getLastChipChild(children)
-
-    if (!wormhole) {
-      // 无对应旧 chip 节点，表示当前 chip 为待挂载节点
-      // 触发 init 生命周期
-      componentInst && invokeLifecycle(LifecycleHooks.INIT, componentInst)
-      // 生成对应的 dom 容器创建 render payload
-      const payload = createRenderPayloadNode(
-        null,
-        null,
-        null,
-        RenderUpdateTypes.CREATE_ELEMENT,
-        chip,
-        null,
-        (chip.tag as string),
-        null,
-        (context: Chip, elm: Element) => {
-          // 当前 render payload commit 之后，将创建的 dom 容器
-          // 挂载到 chip 上下文上，便于子节点挂载时能够访问到对应的父 dom 容器
-          context.elm = elm
-        }
-      )
-      cacheRenderPayload(payload, chipRoot)
-
-      // 触发 willMount 生命周期
-      componentInst && invokeLifecycle(LifecycleHooks.WILL_MOUNT, componentInst)
+    if (isChipItselfSkipable(chip)) {
+      // chip 节点本身可跳过 reconcile
+      chip.selfSkipable = true
     } else {
-      // 组件节点存在配对的相似节点，说明组件会做更新，因此触发 willMount 生命周期
-      componentInst && invokeLifecycle(LifecycleHooks.WILL_UPDATE, componentInst)
+      // chip 节点不可跳过 reconcile
+      initVirtualChip(chip, chipRoot)
     }
 
     // 获取下一个需要处理的 chip 节点
+    const { children, wormhole } = chip
+    const lastChild: Chip = getLastChipChild(children)
     if (lastChild) {
       chip.lastChild = lastChild
       lastChild.parent = chip
@@ -1011,20 +979,19 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
 export function completeReconcile(
   chip: Chip,
   auxiliaryChip: Chip,
-  chipRoot: ChipRoot,
-  isSkipable: boolean = false
+  chipRoot: ChipRoot
 ): Chip {
   chip.phase = ChipPhases.COMPLETE
 
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
-  if (!isSkipable && !chip.skipable) {
+  if (!chip.selfSkipable && !chip.skipable) {
     // 优先处理子节点事务，根据收集的待删除子节点生成对应的 render payload
     if (hasDeletions(chip)) {
       genRenderPayloadsForDeletions(chip.deletions, chipRoot)
     }
     // 生成当前节点 diff 的 render payload 并入队
     reconcileToGenRenderPayload(chip, auxiliaryChip, chipRoot)
-    // 入队深度遍历阶段缓存在当前节点上的 render payload
+    // 入队深度遍历阶段缓存在当前节点上的 render payload，如该节点的 dom 移动操作
     cacheRenderPayload(chip.renderPayloads.first, chipRoot)
 
     // 缓存视图改变的生命周期 (mounted | updated)
@@ -1089,6 +1056,9 @@ export function completeReconcile(
 export function initVirtualChip(chip: Chip, chipRoot: ChipRoot): Chip {
   const { chipType, wormhole } = chip
   switch (chipType) {
+    case ChipTypes.NATIVE_DOM:
+      initReconcileForElement(chip, chipRoot)
+      break
     case ChipTypes.CONDITION:
       // 条件节点
       initConditionChip(chip, chipRoot)
@@ -1099,10 +1069,7 @@ export function initVirtualChip(chip: Chip, chipRoot: ChipRoot): Chip {
       break
     case ChipTypes.CUSTOM_COMPONENT:
       // 组件类型节点
-      const { source, render } = chip.instance = createComponentInstance((chip.tag as Component), chip)
-      disableCollecting()
-      chip.children = render(source)
-      enableCollecting()
+      initReconcileForComponent(chip, chipRoot)
       break
   }
 
@@ -1139,6 +1106,56 @@ export function initIterableChip(chip: Chip, chipRoot: ChipRoot): Chip {
   createRenderEffectForIterableChip(chip, chipRoot, render, sourceGetter)
 
   return chip
+}
+
+/**
+ * 初始化原生 dom 节点的协调工作
+ * @param chip 
+ * @param chipRoot 
+ */
+export function initReconcileForElement(chip: Chip, chipRoot: ChipRoot): void {
+  if (!chip.wormhole) {
+    // 生成对应的 dom 容器创建 render payload
+    const payload = createRenderPayloadNode(
+      null,
+      null,
+      null,
+      RenderUpdateTypes.CREATE_ELEMENT,
+      chip,
+      null,
+      (chip.tag as string),
+      null,
+      (context: Chip, elm: Element) => {
+        // 当前 render payload commit 之后，将创建的 dom 容器
+        // 挂载到 chip 上下文上，便于子节点挂载时能够访问到对应的父 dom 容器
+        context.elm = elm
+      }
+    )
+    cacheRenderPayload(payload, chipRoot)
+  }
+}
+
+/**
+ * 初始化自定义组件的协调工作
+ * @param chip 
+ * @param chipRoot 
+ */
+export function initReconcileForComponent(chip: Chip, chipRoot: ChipRoot): void {
+  const { source, render } = chip.instance = createComponentInstance((chip.tag as Component), chip)
+  disableCollecting()
+  chip.children = render(source)
+  enableCollecting()
+
+  if (!chip.wormhole) {
+    // 无对应旧 chip 节点，表示当前 chip 为待挂载节点
+    // 触发 init 生命周期
+    invokeLifecycle(LifecycleHooks.INIT, chip.instance)
+    // 触发 willMount 生命周期
+    invokeLifecycle(LifecycleHooks.WILL_MOUNT, chip.instance)
+  } else {
+    // 组件节点存在配对的相似节点，说明组件会做更新，因此触发 willMount 生命周期
+    invokeLifecycle(LifecycleHooks.WILL_UPDATE, chip.instance)
+  }
 }
 
 /**

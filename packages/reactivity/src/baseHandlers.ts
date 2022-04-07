@@ -35,8 +35,7 @@ export interface PropertyDescriptor {
 
 const arrayInstrumentations: Record<string, Function> = createEmptyObject()
 (['indexOf', 'lastIndexOf', 'include'] as const).forEach((fnName: string) => {
-  arrayInstrumentations[fnName] = function(...args: any[]) {
-    const target: Array<any> = args[args.length - 2]
+  arrayInstrumentations[fnName] = function([target, isShallow, ...rawArgs]: any[]): unknown {
     for (let i = 0, len = target.length; i < len; i++) {
       collect(target, i, ReactiveActionTypes.GET)
     }
@@ -45,13 +44,11 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
     // 2. 如果入参值没有查询到，并且处于非 shallow 模式，则按照入参值的原始值去查找；
     // 如果处于 shallow 模式，直接返回入参值的查找结果
     const rawMethod: Function = Array.prototype[fnName]
-    const isShallow: boolean = args[args.length - 1]
-    const rawArgs = args.slice(0, -2)
     const res = rawMethod.call(target, ...rawArgs)
     if ((res === true || res !== -1) || isShallow) {
       return res
     }
-    return rawMethod.call(target, ...args.map(arg => getRaw(arg)))
+    return rawMethod.call(target, ...rawArgs.map(arg => getRaw(arg)))
   }
 })
 
@@ -61,7 +58,7 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
     thisArg: any,
     target: Array<any>,
     isShallow: boolean
-  ) {
+  ): unknown {
     for (let i = 0, len = target.length; i < len; i++) {
       collect(target, i, ReactiveActionTypes.GET)
     }
@@ -82,7 +79,7 @@ const arrayInstrumentations: Record<string, Function> = createEmptyObject()
   }
 })
 
-function createGetter(isShallow: boolean = false) {
+function createGetter(isShallow: boolean = false): Function {
   return function get(target: Target, key: string | symbol, receiver: object) {
     // Proxy 属性拦截访问
     // effect 收集仅支持通过 target 对应的 proxy 本身访问触发，从而保障不同 handler 之间
@@ -128,7 +125,7 @@ function createGetter(isShallow: boolean = false) {
   }
 }
 
-function createSetter(isShallow: boolean = false) {
+function createSetter(isShallow: boolean = false): Function {
   return function set(
     target: Target, 
     key: string | symbol, 
@@ -183,7 +180,7 @@ export function ownKeys(target: Target): (string | number | symbol)[] {
   return Reflect.ownKeys(target)
 }
 
-export function createDefinePropertyHandler(isShallow: boolean = false) {
+export function createDefinePropertyHandler(isShallow: boolean = false): Function {
   return function defineProperty(
     target: Target,
     key: string | symbol,

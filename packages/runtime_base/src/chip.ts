@@ -98,8 +98,9 @@ export interface Chip extends ChipCore {
   instance: ChipInstance | null
   directives?: unknown
   components?: unknown
-  someChildrenMaySkip?: true // chip 的部分子代节点在 reconcile 阶段有可能被跳过，仅可迭代 fragment 会持有该属性
-  skipable?: true // 标记 chip 节点本身是否可跳过 reconcile
+  childMaySkip?: boolean // chip 的部分子代节点在 reconcile 阶段有可能被跳过，仅可迭代 fragment 会持有该属性
+  selfSkipable?: true // 标记 chip 节点本身是否可跳过 reconcile
+  skipable?: true // 标记 chip 节点及其子代是否全部可跳过 reconcile
   // 当前已转化为 chip 的 Chip child 索引，用于辅助 chip 树
   // 遍历过程中动态创建新的 chip
   currentChildIndex?: number

@@ -115,10 +115,8 @@ export const enum NukerRenderModes {
   CONCURRENT = 2
 }
 
-// 当前正在执行渲染工作的组件 instance
-export let currentRenderingInstance: ComponentInstance | VirtualInstance = null
-export let renderMode: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
-const reconcilingCellStatusStack: number[] = [] // 描述协调块子代 dom 结构状态的栈结构
+export let currentRenderingInstance: ComponentInstance | VirtualInstance = null // 当前正在执行渲染工作的组件 instance
+export let renderMode: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY // 框架的渲染模式
 let mutableHookStrategy: number // UI 变化后生命周期的触发策略
 
 /**
@@ -833,8 +831,7 @@ export function isChipSkipable(chip: Chip): boolean {
   // 2. 可迭代数据生成的相似节点对 (key 相同代表对应数据源未发生变化)，且可迭代数据源本身无引用级变化
   return Boolean(
     chip.wormhole &&
-    ((getCurrentReconcilingCellStatus() === ReconcilingCellStatuses.CHILD_MAY_SKIP &&
-    chip.compileFlags & CompileFlags.COMPLETE_STATIC) ||
+    ((chip.compileFlags & CompileFlags.COMPLETE_STATIC) ||
     (chip.parent.childMaySkip && chip.key))
   )
 }
@@ -846,57 +843,9 @@ export function isChipSkipable(chip: Chip): boolean {
 export function isChipItselfSkipable(chip: Chip): boolean {
   return Boolean(
     chip.wormhole &&
-    ((getCurrentReconcilingCellStatus() === ReconcilingCellStatuses.CHILD_MAY_SKIP &&
-    chip.compileFlags & CompileFlags.STATIC) ||
+    ((chip.compileFlags & CompileFlags.STATIC) ||
     chip.compileFlags & CompileFlags.RECONCILE_BLOCK)
   )
-}
-
-/**
- * 入栈协调块的结构状态信息，并作为当前协调块的结构状态
- * @param status 
- */
-export function pushReconcilingCellStatus(status: number): number {
-  reconcilingCellStatusStack.push(status)
-  return status
-}
-
-/**
- * 出栈协调块的结构状态信息，结构状态恢复到父级状态
- */
-export function popReconcilingCellStatus(): number {
-  return reconcilingCellStatusStack.pop()
-}
-
-/**
- * 获取当前所在协调块的结构状态
- */
-export function getCurrentReconcilingCellStatus(): number {
-  return reconcilingCellStatusStack[reconcilingCellStatusStack.length - 1]
-}
-
-/**
- * 设置当前协调单元对应的 dom 结构状态信息
- * @param chip 
- */
-export function setReconcilingCellStatus(chip: Chip): number {
-  const type: number = chip.parent.chipType
-  if (type === ChipTypes.CONDITION) {
-    return pushReconcilingCellStatus(ReconcilingCellStatuses.FULL_RECONCILE)
-  } else if (type === ChipTypes.FRAGMENT) {
-    return pushReconcilingCellStatus(ReconcilingCellStatuses.CHILD_MAY_SKIP)
-  }
-}
-
-/**
- * 将协调单元的 dom 结构状态恢复到上一个状态
- * @param chip 
- */
-export function resetReconcilingCellStatus(chip: Chip): void {
-  const type: number = chip.parent.chipType
-  if (type === ChipTypes.CONDITION || type === ChipTypes.FRAGMENT) {
-    popReconcilingCellStatus()
-  }
 }
 
 /**
@@ -930,8 +879,6 @@ export function reconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip 
  */
 export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): Chip {
   chip.phase = ChipPhases.INITIALIZE
-  // 更新当前协调单元的子代 dom 结构状态
-  setReconcilingCellStatus(chip)
 
   // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
   // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
@@ -946,7 +893,7 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
       chip.selfSkipable = true
     } else {
       // chip 节点不可跳过 reconcile
-      initVirtualChip(chip, chipRoot)
+      initReconcileForChip(chip, chipRoot)
     }
 
     // 获取下一个需要处理的 chip 节点
@@ -958,7 +905,14 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
       chip.currentChildIndex = (isArray(children) ? (children.length - 1) : 0)
       // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
       // 通过新旧节点间的映射关系进行节点对的 diff
-      matchChipChildren(wormhole.children, children)
+      // 如果当前节点无对应的旧节点，那么子代节点不会做匹配，因此一旦某个
+      // chip 节点不存在对应的旧节点，该 chip 对应的整个子树都不会有旧
+      // 节点与之匹配
+      const oldChildren: ChipChildren = wormhole?.children
+      if (oldChildren && children) {
+        matchChipChildren(oldChildren, children)
+      }
+
       nextChip = lastChild
     } else {
       nextChip = completeReconcile(chip, lastChip, chipRoot)
@@ -984,7 +938,7 @@ export function completeReconcile(
   chip.phase = ChipPhases.COMPLETE
 
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
-  if (!chip.selfSkipable && !chip.skipable) {
+  if (!chip.selfSkipable) {
     // 优先处理子节点事务，根据收集的待删除子节点生成对应的 render payload
     if (hasDeletions(chip)) {
       genRenderPayloadsForDeletions(chip.deletions, chipRoot)
@@ -994,27 +948,7 @@ export function completeReconcile(
     // 入队深度遍历阶段缓存在当前节点上的 render payload，如该节点的 dom 移动操作
     cacheRenderPayload(chip.renderPayloads.first, chipRoot)
 
-    // 缓存视图改变的生命周期 (mounted | updated)
-    if (chip.chipType === ChipTypes.CUSTOM_COMPONENT) {
-      const inst = (chip.instance as ComponentInstance)
-      if (chip.wormhole) {
-        // 组件类型节点存在旧的相似节点，走更新逻辑，缓存组件的 updated 
-        // 生命周期到全局生命周期缓存队列
-        registerLifecycleHook(
-          chipRoot,
-          LifecycleHooks.UPDATED,
-          inst[LifecycleHooks.UPDATED]?.first
-        )
-      } else {
-        // 组件类型节点无对应的相似节点，走挂载逻辑，缓存组件的 mounted
-        // 生命周期到全局生命周期缓存队列
-        registerLifecycleHook(
-          chipRoot,
-          LifecycleHooks.MOUNTED,
-          inst[LifecycleHooks.MOUNTED]?.first
-        )
-      }
-    }
+    completeReconcileForChip(chip, chipRoot)
   }
 
   // 获取下一组需要处理的 chip 节点对
@@ -1040,9 +974,6 @@ export function completeReconcile(
     next = chip.parent
   }
 
-  // 根据 chip 类型恢复到上一个协调单元的 dom 结构状态
-  resetReconcilingCellStatus(chip)
-
   return next
 }
 
@@ -1053,7 +984,7 @@ export function completeReconcile(
  * @param chip 
  * @param chipRoot 
  */
-export function initVirtualChip(chip: Chip, chipRoot: ChipRoot): Chip {
+export function initReconcileForChip(chip: Chip, chipRoot: ChipRoot): Chip {
   const { chipType, wormhole } = chip
   switch (chipType) {
     case ChipTypes.NATIVE_DOM:
@@ -1159,6 +1090,49 @@ export function initReconcileForComponent(chip: Chip, chipRoot: ChipRoot): void 
 }
 
 /**
+ * 根据 chip 类型完成对应的回溯阶段协调工作
+ * @param chip 
+ * @param chipRoot 
+ */
+export function completeReconcileForChip(chip: Chip, chipRoot: ChipRoot): void {
+  switch (chip.chipType) {
+    case ChipTypes.CUSTOM_COMPONENT:
+      completeReconcileForComponent(chip, chipRoot)
+      break
+    default:
+      break
+  }
+}
+
+/**
+ * 完成自定义组件对应的回溯阶段协调工作
+ * @param chip 
+ * @param chipRoot 
+ */
+export function completeReconcileForComponent(chip: Chip, chipRoot: ChipRoot): void {
+  // 缓存视图改变的生命周期 (mounted | updated)，reconcile 阶段仅是数据层面的处理，
+  // 未发生实际的视图渲染，因此需要将生命周期缓存至队列，commit 阶段后再批量执行
+  const inst = (chip.instance as ComponentInstance)
+  if (chip.wormhole) {
+    // 组件类型节点存在旧的相似节点，走更新逻辑，缓存组件的 updated 
+    // 生命周期到全局生命周期缓存队列
+    registerLifecycleHook(
+      chipRoot,
+      LifecycleHooks.UPDATED,
+      inst[LifecycleHooks.UPDATED]?.first
+    )
+  } else {
+    // 组件类型节点无对应的相似节点，走挂载逻辑，缓存组件的 mounted
+    // 生命周期到全局生命周期缓存队列
+    registerLifecycleHook(
+      chipRoot,
+      LifecycleHooks.MOUNTED,
+      inst[LifecycleHooks.MOUNTED]?.first
+    )
+  }
+}
+
+/**
  * 建立 chip 子节点之间的映射关系，并生成部分子代节点对应的 render payload
  * 主要涉及子节点的删除、移动
  * @param oldChildren 
@@ -1183,10 +1157,15 @@ export function hasDeletions(chip: Chip): boolean {
   return isArray(chip.deletions)
 }
 
-// 新旧 chip (仅 chip 节点本身) diff 生成更新描述
-// 配对方式有以下几种:
-// · 类型、key 均相同的相似节点 (属性更新)
-// · 旧节点为 null，新节点为有效节点 (挂载新节点)
+/**
+ * 新旧 chip (仅 chip 节点本身) diff 生成更新描述
+ * 配对方式有以下几种:
+ * · 类型、key 均相同的相似节点 (属性更新)
+ * · 旧节点为 null，新节点为有效节点 (挂载新节点)
+ * @param chip 
+ * @param auxiliaryChip 
+ * @param chipRoot 
+ */
 export function reconcileToGenRenderPayload(
   chip: Chip,
   auxiliaryChip: Chip,

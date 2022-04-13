@@ -293,7 +293,7 @@ export function getPropLiteralValue(valueContainer: ChipPropValue): StaticValue 
  */
 export function getPointerChip(chip: Chip): Chip {
   const parent: Chip = chip.parent
-  if (isLastChildOfChip(chip, parent)) {
+  if (isLastChildOfChip(chip)) {
     return parent
   } else {
     const children = (parent.children as Chip[])

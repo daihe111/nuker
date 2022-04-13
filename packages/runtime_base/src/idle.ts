@@ -20,7 +20,7 @@ export const enum IdleTypes {
 // reconcile tasks -> commit -> idle 需要作为一个整体任务注册进调度系统，idle 及之前阶段
 // 产生的 reconcile 任务须保证排在 idle 任务之后，以保证新的 reconcile 任务执行时能访问到正
 // 确的 chip 数据状态，避免数据状态错乱
-export function performIdleWorkConcurrently(chipRoot: ChipRoot, onIdleCompleted?: Function): Function {
+function performIdleWorkConcurrently(chipRoot: ChipRoot, onIdleCompleted?: Function): Function {
   // 闲时任务执行单元，作为调度任务的子任务
   function idleJobPerformingUnit(jobNode: IdleJobUnit): Function {
     const { job, next } = jobNode

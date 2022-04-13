@@ -698,13 +698,46 @@ export function handleChildJobOfRenderEffect(
     chipRoot,
     newData
   )
-  if (renderMode = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY) {
-    // BATCH_SYNC_PREFERENTIALLY 渲染模式下以调度系统默认优先级将
-    // reconcile 任务注册入调度系统
-    return registerJob(job as Job)
-  } else {
-    // 返回子任务
-    return job
+  switch (renderMode) {
+    case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
+      // BATCH_SYNC_PREFERENTIALLY 渲染模式下以调度系统默认优先级将
+      // reconcile 任务注册入调度系统
+      return registerJob(job as Job)
+    case NukerRenderModes.CONCURRENT:
+      // 返回子任务
+      return job
+    case NukerRenderModes.BATCH_SYNC:
+    default:
+      return performReconcileSync(chip, chipRoot)
+  }
+}
+
+/**
+ * 同步执行节点域的协调工作
+ * @param chip 
+ * @param chipRoot 
+ */
+export function performReconcileSync(chip: Chip, chipRoot: ChipRoot): void {
+  const ancestorChip: Chip = chip
+  let current: Chip = ancestorChip
+  let last: Chip
+  while (true) {
+    if (current === ancestorChip) {
+      if (current.phase === ChipPhases.PENDING) {
+        const pointer: Chip = getPointerChip(chip.wormhole)
+        cacheIdleJob(
+          replaceChipContext.bind(null, chip, chip.wormhole, pointer),
+          chipRoot,
+          IdleTypes.SYNC
+        )
+        current = reconcile(last = current, pointer, chipRoot)
+      } else {
+        performCommitWork(chipRoot)
+        break
+      }
+    } else {
+      current = reconcile(last = current, last, chipRoot)
+    }
   }
 }
 
@@ -789,10 +822,10 @@ export function genReconcileJob(
     const newChip = cloneChip(chip, EMPTY_OBJ, children)
     newChip.wormhole = chip
     // trigger reconcile diff
-    const originalChip: Chip = newChip
+    const ancestorChip: Chip = newChip
     const reconcileJob = (chip: Chip, lastChip: Chip): Function => {
       // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
-      if (chip === originalChip) {
+      if (chip === ancestorChip) {
         // 处理起始 chip 节点
         if (chip.phase === ChipPhases.PENDING) {
           const pointer: Chip = getPointerChip(chip.wormhole)

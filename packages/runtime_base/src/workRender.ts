@@ -28,9 +28,9 @@ import { ComponentInstance, Component, createComponentInstance } from "./compone
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
-import { createVirtualChipInstance, VirtualInstance, VirtualChipRender, isRootOfVirtualChip } from "./virtualChip";
+import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
-import { pushRenderEffectToBuffer, RenderEffectTypes, RenderEffectFlags } from "./renderEffectScheduler";
+import { pushRenderEffectToBuffer, RenderEffectTypes } from "./renderEffectScheduler";
 import { cacheIdleJob, replaceChipContext, performIdleWork, IdleTypes } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 import { currentEventPriority } from "../../runtime_dom/src/event";
@@ -673,7 +673,34 @@ export function createRenderEffectForIterableChip(
  * @param effect 
  */
 export function renderEffectScheduler(effect: Effect): void {
-  // BATCH_SYNC_PREFERENTIALLY 渲染模式下，将当前 effect 推入渲染任务缓冲区
+  switch (renderMode) {
+    case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
+      // 双线调度模型:
+      // ·同步任务由 js event loop 调度
+      // ·concurrent 任务由框架调度系统调度
+      effect.effectType === RenderEffectTypes.CONCURRENT ?
+        // 仅使用调度系统的时间切片能力，优先级统一使用默认优先级
+        registerJob(effect) :
+        pushRenderEffectToBuffer(effect)
+      break
+    case NukerRenderModes.CONCURRENT:
+      // concurrent 渲染模式下，根据当前事件优先级将 renderEffect 作为任务注册进调度系统，
+      // 以保证渲染任务按照优先级策略调度执行
+      registerJob(effect, currentEventPriority)
+      break
+    case NukerRenderModes.BATCH_SYNC:
+    default:
+      // BATCH_SYNC_PREFERENTIALLY 渲染模式下，将当前 effect 推入渲染任务缓冲区
+      pushRenderEffectToBuffer(effect)
+      break
+  }
+  if (renderMode === NukerRenderModes.BATCH_SYNC) {
+    // BATCH_SYNC_PREFERENTIALLY 渲染模式下，将当前 effect 推入渲染任务缓冲区
+    pushRenderEffectToBuffer(effect)
+  } else {
+    
+  }
+  
   // CONCURRENT 渲染模式下，将 effect 注册进调度系统，以保证渲染任务按照优先级策略调度执行
   renderMode === NukerRenderModes.BATCH_SYNC_PREFERENTIALLY ?
     pushRenderEffectToBuffer(effect):
@@ -700,11 +727,9 @@ export function handleChildJobOfRenderEffect(
   )
   switch (renderMode) {
     case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
-      // BATCH_SYNC_PREFERENTIALLY 渲染模式下以调度系统默认优先级将
-      // reconcile 任务注册入调度系统
-      return registerJob(job as Job)
     case NukerRenderModes.CONCURRENT:
-      // 返回子任务
+      // BATCH_SYNC_PREFERENTIALLY & CONCURRENT 渲染模式下 renderEffect 整体作为任务
+      // 注册进调度系统，因此此处返回 renderEffect 对应的子任务，即实际的协调逻辑
       return job
     case NukerRenderModes.BATCH_SYNC:
     default:

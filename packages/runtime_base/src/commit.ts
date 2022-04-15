@@ -1,14 +1,17 @@
 import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
 import { Chip, ChipRoot } from "./chip";
-import { performIdleWork, cacheIdleJob, IdleTypes } from "./idle";
+import { performConcurrentIdleWork, cacheConcurrentIdleJob } from "./idle";
 import { isFunction } from "../../share/src";
 
 // 待删除 prop 的占位标志位
 export const PROP_TO_DELETE = Symbol()
 
-// payload 链表节点在 reconcile 阶段按照由子到父的顺序插入，commit 时
-// 按照先后顺序执行 payload 节点，即可保证 commit 的执行顺序与 reconcile 一致
+/**
+ * payload 链表节点在 reconcile 阶段按照由子到父的顺序插入，commit 时
+ * 按照先后顺序执行 payload 节点，即可保证 commit 的执行顺序与 reconcile 一致
+ * @param chipRoot 
+ */
 export function performCommitWork(chipRoot: ChipRoot): null {
   let currentPayload = chipRoot.renderPayloads?.first
   let i = 0
@@ -29,15 +32,18 @@ export function performCommitWork(chipRoot: ChipRoot): null {
   const clearJob: Function = () => {
     chipRoot.renderPayloads = null
   }
-  cacheIdleJob(clearJob, chipRoot, IdleTypes.CONCURRENT)
+  cacheConcurrentIdleJob(clearJob, chipRoot)
 
   // 进入 idle 阶段，批量执行闲时任务，如 chip 信息
   // 更新任务、过期信息清理任务...
-  performIdleWork(chipRoot, IdleTypes.CONCURRENT)
+  performConcurrentIdleWork(chipRoot)
   return null
 }
 
-// 将渲染描述载荷提交到真正的 dom 上
+/**
+ * 将渲染描述载荷提交到真正的 dom 上
+ * @param renderPayload 
+ */
 export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
   const {
     type,

@@ -31,7 +31,12 @@ import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes } from "./renderEffectScheduler";
-import { cacheIdleJob, replaceChipContext, performIdleWork, IdleTypes } from "./idle";
+import {
+  cacheConcurrentIdleJob,
+  cacheSyncIdleJob,
+  replaceChipContext,
+  performSyncIdleWork
+} from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 import { currentEventPriority } from "../../runtime_dom/src/event";
 
@@ -137,7 +142,7 @@ export function render(
   initScheduler({
     isDeepFirst: true,
     ...rm === NukerRenderModes.CONCURRENT ? {
-      onConvergentJobsFinished: performIdleWork.bind(null, chipRoot, IdleTypes.SYNC)
+      onConvergentJobsFinished: performSyncIdleWork.bind(null, chipRoot)
     } : {}
   })
 
@@ -545,7 +550,7 @@ export function patchMutationSync(
     // 视图变化，并将闲时任务缓存起来，等一批同步渲染任务全部执行完后再
     // 批量同步执行 commit 阶段缓存的闲时任务
     // (convergent commits -> convergent idles)
-    cacheIdleJob(idleJob, chipRoot, IdleTypes.SYNC)
+    cacheSyncIdleJob(idleJob, chipRoot)
   } else {
     // 如果框架渲染模式是 batch sync preferentially，idle 任务须在 
     // commit 后立即执行 (single commit -> single idle)
@@ -750,10 +755,9 @@ export function performReconcileSync(chip: Chip, chipRoot: ChipRoot): void {
     if (current === ancestorChip) {
       if (current.phase === ChipPhases.PENDING) {
         const pointer: Chip = getPointerChip(chip.wormhole)
-        cacheIdleJob(
+        cacheSyncIdleJob(
           replaceChipContext.bind(null, chip, chip.wormhole, pointer),
-          chipRoot,
-          IdleTypes.SYNC
+          chipRoot
         )
         current = reconcile(last = current, pointer, chipRoot)
       } else {
@@ -854,10 +858,9 @@ export function genReconcileJob(
         // 处理起始 chip 节点
         if (chip.phase === ChipPhases.PENDING) {
           const pointer: Chip = getPointerChip(chip.wormhole)
-          cacheIdleJob(
+          cacheConcurrentIdleJob(
             replaceChipContext.bind(null, chip, chip.wormhole, pointer),
-            chipRoot,
-            IdleTypes.CONCURRENT
+            chipRoot
           )
 
           // 返回处理下一组 chip 节点的子任务

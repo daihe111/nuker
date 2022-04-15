@@ -89,6 +89,9 @@ export function genBaseListNode(
   }
 }
 
-export function createListAccessor<Node = null>(): ListAccessor<Node> {
-  return { first: null, last: null }
+export function createListAccessor<Node = null>(
+  first: Node = null,
+  last: Node = null
+): ListAccessor<Node> {
+  return { first, last: last || first }
 }

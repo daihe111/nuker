@@ -10,28 +10,45 @@
 
 import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot, ChipEffectUnit } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
-import { extend, isFunction } from "../../share/src";
+import { extend, createListAccessor } from "../../share/src";
 import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
 import { ListAccessor } from "../../share/src/shareTypes";
 
-export const enum IdleTypes {
-  CONCURRENT = 0, // concurrent 渲染任务产生的闲时任务
-  SYNC = 1 // 同步渲染任务产生的闲时任务
+/**
+ * 同步任务批次中执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
+ * @param chipRoot 
+ */
+export function performSyncIdleWork(chipRoot: ChipRoot): void {
+  flushIdle(chipRoot.syncIdleJobs)
+  chipRoot.syncIdleJobs = null
 }
 
 /**
- * 批量执行显示任务队列中的任务并清空队列，每次执行时队列中的任务会收敛为一个不可打断的同步任务
+ * concurrent 任务批次中执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
  * @param chipRoot 
- * @param type 
  */
-export function performIdleWork(chipRoot: ChipRoot, type: number): boolean {
-  const accessor: ListAccessor<IdleJobUnit> = (type === IdleTypes.CONCURRENT ?
-    chipRoot.concurrentIdleJobs :
-    (type === IdleTypes.SYNC ?
-      chipRoot.syncIdleJobs :
-      null))
-  if (!accessor?.first) {
-    return
+export function performConcurrentIdleWork(chipRoot: ChipRoot): void {
+  flushIdle(chipRoot.concurrentIdleJobs)
+  chipRoot.concurrentIdleJobs = null
+
+  // 卸载缓存的已失效 effects
+  teardownAbandonedEffects(chipRoot)
+  // 清除已废弃 effect 缓存
+  chipRoot.abandonedEffects = void
+  // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
+  [LifecycleHooks.MOUNTED, LifecycleHooks.UPDATED].forEach((n: string) => {
+    invokeLifecycle(n, chipRoot)
+    chipRoot[n] = null
+  })
+}
+
+/**
+ * 批量执行闲时任务
+ * @param accessor 
+ */
+function flushIdle(accessor: ListAccessor<IdleJobUnit> | void): boolean {
+  if (!accessor || !accessor.first) {
+    return false
   }
 
   // 批量执行闲时任务
@@ -40,36 +57,18 @@ export function performIdleWork(chipRoot: ChipRoot, type: number): boolean {
     currentUnit.job()
     currentUnit = currentUnit.next
   }
-
-  // 执行完闲时任务后清空对应的任务队列
-  switch (type) {
-    case IdleTypes.CONCURRENT:
-      chipRoot.concurrentIdleJobs = null
-      break
-    case IdleTypes.SYNC:
-      chipRoot.syncIdleJobs = null
-      break
-    default:
-      // do nothing, an error type has been passed in
-      break
-  }
-
-  // 卸载缓存的已失效 effects
-  teardownAbandonedEffects(chipRoot)
-  // 清除已废弃 effect 缓存
-  chipRoot.abandonedEffects = null
-  // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
-  [LifecycleHooks.MOUNTED, LifecycleHooks.UPDATED].forEach((n: string) => {
-    invokeLifecycle(n, chipRoot)
-    chipRoot[n] = null
-  })
+  return true
 }
 
-// 用 reconcile 阶段新生成的 chip 子树更新 chip 局部子树，并清理过期状态
-// 该更新局部 chip 树的方法存在内存隐患，直接替换局部 chip 节点，但是旧的 chip
-// 包括其子代 chip 仍然会保持对全局 effect 的引用，因此旧 chip 对应的内存
-// 不会被 GC 及时回收，如果要及时释放内存，需要深度遍历旧的 chip，这样会多一次
-// 遍历处理成本，因此暂不采用该方案进行局部 chip tree 的更新
+/**
+ * 用 reconcile 阶段新生成的 chip 子树更新 chip 局部子树，并清理过期状态
+ * 该更新局部 chip 树的方法存在内存隐患，直接替换局部 chip 节点，但是旧的 chip
+ * 包括其子代 chip 仍然会保持对全局 effect 的引用，因此旧 chip 对应的内存
+ * 不会被 GC 及时回收，如果要及时释放内存，需要深度遍历旧的 chip，这样会多一次
+ * 遍历处理成本，因此暂不采用该方案进行局部 chip tree 的更新
+ * @param chip 
+ * @param anchorContext 
+ */
 export function updateSubChipTree(chip: Chip, anchorContext: Chip): Chip {
   const oldChip: Chip = chip.wormhole
   if (anchorContext.lastChild === oldChip) {
@@ -85,7 +84,14 @@ export function updateSubChipTree(chip: Chip, anchorContext: Chip): Chip {
   return chip
 }
 
-// 更新 chip 上下文信息
+/**
+ * 更新 chip 上下文信息
+ * @param chip 
+ * @param props 
+ * @param children 
+ * @param key 
+ * @param restArgs 
+ */
 export function updateChipContext(
   chip: Chip,
   props: ChipProps,
@@ -159,41 +165,42 @@ export function updateRefs(chip: Chip): void {
 
 }
 
-/**
- * 将闲时任务缓存至闲时任务队列
- * @param job 
- * @param chipRoot 
- */
-export function cacheIdleJob(job: Function, chipRoot: ChipRoot, type: number): Function {
-  const idleJobs = (type === IdleTypes.CONCURRENT ?
-    chipRoot.concurrentIdleJobs :
-    (type === IdleTypes.SYNC ?
-      chipRoot.syncIdleJobs :
-      null))
-  const jobNode = {
+function createIdleNode(job: Function): IdleJobUnit {
+  return {
     job,
     next: null
   }
+}
+
+/**
+ * 将 concurrent 闲时任务缓存至闲时任务队列
+ * @param job 
+ * @param chipRoot 
+ */
+export function cacheConcurrentIdleJob(job: Function, chipRoot: ChipRoot): Function {
+  const idleJobs: ListAccessor<IdleJobUnit> | void = chipRoot.concurrentIdleJobs
+  const jobNode: IdleJobUnit = createIdleNode(job)
   if (idleJobs) {
     idleJobs.last = idleJobs.last.next = jobNode
   } else {
-    switch (type) {
-      case IdleTypes.CONCURRENT:
-        chipRoot.concurrentIdleJobs = {
-          first: jobNode,
-          last: jobNode
-        }
-        break
-      case IdleTypes.SYNC:
-        chipRoot.syncIdleJobs = {
-          first: jobNode,
-          last: jobNode
-        }
-        break
-      default:
-        // do nothing, an error type has been passed in
-        break
-    }
+    chipRoot.concurrentIdleJobs = createListAccessor<IdleJobUnit>(jobNode)
+  }
+
+  return job
+}
+
+/**
+ * 将同步闲时任务缓存至闲时任务队列
+ * @param job 
+ * @param chipRoot 
+ */
+export function cacheSyncIdleJob(job: Function, chipRoot: ChipRoot): Function {
+  const idleJobs: ListAccessor<IdleJobUnit> | void = chipRoot.syncIdleJobs
+  const jobNode: IdleJobUnit = createIdleNode(job)
+  if (idleJobs) {
+    idleJobs.last = idleJobs.last.next = jobNode
+  } else {
+    chipRoot.syncIdleJobs = createListAccessor<IdleJobUnit>(jobNode)
   }
 
   return job

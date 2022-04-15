@@ -133,17 +133,17 @@ export interface ChipRoot {
   // chip 根节点
   root: Chip
   // 并发任务产生的闲时任务队列
-  concurrentIdleJobs: ListAccessor<IdleJobUnit> | null
+  concurrentIdleJobs: ListAccessor<IdleJobUnit> | void
   // 同步任务产生的闲时任务队列
-  syncIdleJobs: ListAccessor<IdleJobUnit> | null
+  syncIdleJobs: ListAccessor<IdleJobUnit> | void
   // 渲染描述载荷队列
-  renderPayloads: ListAccessor<RenderPayloadNode> | null
+  renderPayloads: ListAccessor<RenderPayloadNode>
   // 当前渲染周期内缓存的已失效 effect，这些 effect 将在 idle 阶段被释放
-  abandonedEffects: ListAccessor<ChipEffectUnit> | null
+  abandonedEffects: ListAccessor<ChipEffectUnit>
 
   // 改变视图生命周期的缓存队列
-  [LifecycleHooks.MOUNTED]?: ListAccessor<LifecycleUnit> | null
-  [LifecycleHooks.UPDATED]?: ListAccessor<LifecycleUnit> | null
+  [LifecycleHooks.MOUNTED]?: ListAccessor<LifecycleUnit>
+  [LifecycleHooks.UPDATED]?: ListAccessor<LifecycleUnit>
 }
 
 let id = 0

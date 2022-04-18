@@ -148,15 +148,6 @@ export interface ChipRoot {
 
 let id = 0
 
-// 在触发源数据变化时触发 chip 更新，nuker 复用一颗 chip tree
-export function updateChip(chip: Chip, payload: object): Chip {
-  if (isObject(payload)) {
-    // update chip from payload
-  }
-
-  return null
-}
-
 export function parseChipType(tag: ChipTag): number {
   if (typeof tag === 'string') {
     if (isReservedTag(tag)) {

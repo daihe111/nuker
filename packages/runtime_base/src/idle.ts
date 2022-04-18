@@ -20,7 +20,7 @@ import { ListAccessor } from "../../share/src/shareTypes";
  */
 export function performSyncIdleWork(chipRoot: ChipRoot): void {
   flushIdle(chipRoot.syncIdleJobs)
-  chipRoot.syncIdleJobs = null
+  teardownSyncChipCache(chipRoot)
 }
 
 /**
@@ -29,12 +29,10 @@ export function performSyncIdleWork(chipRoot: ChipRoot): void {
  */
 export function performConcurrentIdleWork(chipRoot: ChipRoot): void {
   flushIdle(chipRoot.concurrentIdleJobs)
-  chipRoot.concurrentIdleJobs = null
-
   // 卸载缓存的已失效 effects
   teardownAbandonedEffects(chipRoot)
   // 清除已废弃 effect 缓存
-  chipRoot.abandonedEffects = void
+  teardownConcurrentChipCache(chipRoot)
   // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
   [LifecycleHooks.MOUNTED, LifecycleHooks.UPDATED].forEach((n: string) => {
     invokeLifecycle(n, chipRoot)
@@ -218,3 +216,22 @@ export function teardownAbandonedEffects(chipRoot: ChipRoot): void {
     currentUnit = currentUnit.next
   }
 }
+
+/**
+ * 卸载 concurrent 任务产生的缓存
+ * @param chipRoot 
+ */
+export function teardownConcurrentChipCache(chipRoot: ChipRoot): void {
+  (['concurrentIdleJobs', 'renderPayloads', 'abandonedEffects'] as const).forEach(key => {
+    chipRoot[key] = null
+  })
+}
+
+/**
+ * 卸载同步任务产生的缓存
+ * @param chipRoot 
+ */
+export function teardownSyncChipCache(chipRoot: ChipRoot): void {
+  chipRoot.syncIdleJobs = null
+}
+

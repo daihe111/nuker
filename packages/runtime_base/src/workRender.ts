@@ -35,7 +35,8 @@ import {
   cacheConcurrentIdleJob,
   cacheSyncIdleJob,
   replaceChipContext,
-  performSyncIdleWork
+  performSyncIdleWork,
+  teardownConcurrentChipCache
 } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 import { currentEventPriority } from "../../runtime_dom/src/event";
@@ -857,6 +858,15 @@ export function genReconcileJob(
       if (chip === ancestorChip) {
         // 处理起始 chip 节点
         if (chip.phase === ChipPhases.PENDING) {
+          if (renderMode === NukerRenderModes.CONCURRENT) {
+            // 如果是 concurrent 渲染模式，任务可能被打断并中途插入新的任务，
+            // 为保证任务重新开始后访问相对应的状态缓存，需要在 concurrent 任
+            // 重新开始时卸载已失效的状态缓存，比如执行到半途但被其他任务插入，
+            // 当该任务重新开始时由于要完全从头执行，因此将任务被打断前积累的
+            // 失效状态缓存作为垃圾信息清理掉
+            teardownConcurrentChipCache(chipRoot)
+          }
+
           const pointer: Chip = getPointerChip(chip.wormhole)
           cacheConcurrentIdleJob(
             replaceChipContext.bind(null, chip, chip.wormhole, pointer),

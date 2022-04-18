@@ -6,8 +6,12 @@ const doc = (typeof document !== 'undefined' ? document : null) as Document
 
 const staticTemplateCache = new Map<string, DocumentFragment>()
 
-export function isReservedTag(tag) {
+export function isReservedTag(tag: unknown): boolean {
   return isHTMLTag(tag) || isSVGTag(tag);
+}
+
+export function isReservedComponentTag(tag: unknown): boolean {
+  // TODO 逻辑待补充
 }
 
 export const isHTMLTag = createMap(

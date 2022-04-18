@@ -1,7 +1,7 @@
 import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
 import { Chip, ChipRoot } from "./chip";
-import { performConcurrentIdleWork, cacheConcurrentIdleJob } from "./idle";
+import { performConcurrentIdleWork } from "./idle";
 import { isFunction } from "../../share/src";
 
 // 待删除 prop 的占位标志位
@@ -27,12 +27,6 @@ export function performCommitWork(chipRoot: ChipRoot): null {
       }
     }
   }
-
-  // 已派发 render payloads 清理
-  const clearJob: Function = () => {
-    chipRoot.renderPayloads = null
-  }
-  cacheConcurrentIdleJob(clearJob, chipRoot)
 
   // 进入 idle 阶段，批量执行闲时任务，如 chip 信息
   // 更新任务、过期信息清理任务...

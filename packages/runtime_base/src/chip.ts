@@ -132,8 +132,8 @@ export interface Chip extends ChipCore {
 export interface ChipRoot {
   // chip 根节点
   root: Chip
-  // 并发任务产生的闲时任务队列
-  concurrentIdleJobs: ListAccessor<IdleJobUnit> | void
+  // 协调任务产生的闲时任务队列
+  reconcileIdleJobs: ListAccessor<IdleJobUnit> | void
   // 同步任务产生的闲时任务队列
   syncIdleJobs: ListAccessor<IdleJobUnit> | void
   // 渲染描述载荷队列
@@ -233,7 +233,7 @@ export function isLastChildOfChip(child: Chip): boolean {
 export function createChipRoot(root: Chip): ChipRoot {
   return {
     root,
-    concurrentIdleJobs: null,
+    reconcileIdleJobs: null,
     syncIdleJobs: null,
     renderPayloads: null,
     abandonedEffects: null,

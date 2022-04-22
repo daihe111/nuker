@@ -30,18 +30,18 @@ import { effect, disableCollecting, enableCollecting, Effect } from "../../react
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
 import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
-import { pushRenderEffectToBuffer, RenderEffectTypes } from "./renderEffectScheduler";
+import { pushRenderEffectToBuffer, RenderEffectTypes, initRenderEffectBuffer } from "./renderEffectBuffer";
 import {
-  cacheConcurrentIdleJob,
+  cacheReconcileIdleJob,
   cacheSyncIdleJob,
   replaceChipContext,
   performSyncIdleWork,
-  teardownConcurrentChipCache
+  teardownReconcileChipCache
 } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 import { currentEventPriority } from "../../runtime_dom/src/event";
 
-export type AppContent = | Component | Chip
+export type AppContent = | Component
 
 export interface ReconcileChipPair {
   oldChip: Chip | null
@@ -138,14 +138,23 @@ export function render(
 ): Element {
   renderMode = isNumber(rm) ? rm : NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
   mutableHookStrategy = isNumber(mhs) ? mhs : HookInvokingStrategies.ON_IDLE
-  const chip: Chip = createChip((appContent as ChipTag))
+  const chip: Chip = createChip(appContent)
   const chipRoot: ChipRoot = createChipRoot(chip)
-  initScheduler({
-    isDeepFirst: true,
-    ...rm === NukerRenderModes.CONCURRENT ? {
-      onConvergentJobsFinished: performSyncIdleWork.bind(null, chipRoot)
-    } : {}
+  if (renderMode === NukerRenderModes.BATCH_SYNC) {
+    initRenderEffectBuffer({
+      onFlushed: () => {
+        performCommitWork(chipRoot)
+        performSyncIdleWork(chipRoot)
+      }
   })
+  } else {
+    initScheduler({
+      isDeepFirst: true,
+      ...rm === NukerRenderModes.CONCURRENT ? {
+        onConvergentJobsFinished: performSyncIdleWork.bind(null, chipRoot)
+      } : {}
+    })
+  }
 
   // 执行离屏渲染，渲染完成后将内存中的根节点挂载到指定的 dom 容器中
   const root: Element = performRenderSync(chipRoot, chip)
@@ -756,13 +765,12 @@ export function performReconcileSync(chip: Chip, chipRoot: ChipRoot): void {
     if (current === ancestorChip) {
       if (current.phase === ChipPhases.PENDING) {
         const pointer: Chip = getPointerChip(chip.wormhole)
-        cacheSyncIdleJob(
+        cacheReconcileIdleJob(
           replaceChipContext.bind(null, chip, chip.wormhole, pointer),
           chipRoot
         )
         current = reconcile(last = current, pointer, chipRoot)
       } else {
-        performCommitWork(chipRoot)
         break
       }
     } else {
@@ -864,11 +872,11 @@ export function genReconcileJob(
             // 重新开始时卸载已失效的状态缓存，比如执行到半途但被其他任务插入，
             // 当该任务重新开始时由于要完全从头执行，因此将任务被打断前积累的
             // 失效状态缓存作为垃圾信息清理掉
-            teardownConcurrentChipCache(chipRoot)
+            teardownReconcileChipCache(chipRoot)
           }
 
           const pointer: Chip = getPointerChip(chip.wormhole)
-          cacheConcurrentIdleJob(
+          cacheReconcileIdleJob(
             replaceChipContext.bind(null, chip, chip.wormhole, pointer),
             chipRoot
           )

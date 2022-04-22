@@ -27,12 +27,12 @@ export function performSyncIdleWork(chipRoot: ChipRoot): void {
  * concurrent 任务批次中执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
  * @param chipRoot 
  */
-export function performConcurrentIdleWork(chipRoot: ChipRoot): void {
-  flushIdle(chipRoot.concurrentIdleJobs)
+export function performReconcileIdleWork(chipRoot: ChipRoot): void {
+  flushIdle(chipRoot.reconcileIdleJobs)
   // 卸载缓存的已失效 effects
   teardownAbandonedEffects(chipRoot)
   // 清除已废弃 effect 缓存
-  teardownConcurrentChipCache(chipRoot)
+  teardownReconcileChipCache(chipRoot)
   // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
   [LifecycleHooks.MOUNTED, LifecycleHooks.UPDATED].forEach((n: string) => {
     invokeLifecycle(n, chipRoot)
@@ -171,17 +171,17 @@ function createIdleNode(job: Function): IdleJobUnit {
 }
 
 /**
- * 将 concurrent 闲时任务缓存至闲时任务队列
+ * 将协调闲时任务缓存至闲时任务队列
  * @param job 
  * @param chipRoot 
  */
-export function cacheConcurrentIdleJob(job: Function, chipRoot: ChipRoot): Function {
-  const idleJobs: ListAccessor<IdleJobUnit> | void = chipRoot.concurrentIdleJobs
+export function cacheReconcileIdleJob(job: Function, chipRoot: ChipRoot): Function {
+  const idleJobs: ListAccessor<IdleJobUnit> | void = chipRoot.reconcileIdleJobs
   const jobNode: IdleJobUnit = createIdleNode(job)
   if (idleJobs) {
     idleJobs.last = idleJobs.last.next = jobNode
   } else {
-    chipRoot.concurrentIdleJobs = createListAccessor<IdleJobUnit>(jobNode)
+    chipRoot.reconcileIdleJobs = createListAccessor<IdleJobUnit>(jobNode)
   }
 
   return job
@@ -217,13 +217,17 @@ export function teardownAbandonedEffects(chipRoot: ChipRoot): void {
   }
 }
 
+function clearChipCacheByKey(chipRoot: ChipRoot, key: string): void {
+  chipRoot[key] = null
+}
+
 /**
  * 卸载 concurrent 任务产生的缓存
  * @param chipRoot 
  */
-export function teardownConcurrentChipCache(chipRoot: ChipRoot): void {
-  (['concurrentIdleJobs', 'renderPayloads', 'abandonedEffects'] as const).forEach(key => {
-    chipRoot[key] = null
+export function teardownReconcileChipCache(chipRoot: ChipRoot): void {
+  (['reconcileIdleJobs', 'renderPayloads', 'abandonedEffects'] as const).forEach(key => {
+    clearChipCacheByKey(chipRoot, key)
   })
 }
 
@@ -233,5 +237,15 @@ export function teardownConcurrentChipCache(chipRoot: ChipRoot): void {
  */
 export function teardownSyncChipCache(chipRoot: ChipRoot): void {
   chipRoot.syncIdleJobs = null
+}
+
+/**
+ * 批量同步渲染模式下
+ * @param chipRoot 
+ */
+export function teardownChipCacheInBatchSyncMode(chipRoot: ChipRoot): void {
+  (['syncIdleJobs', 'renderPayloads', 'abandonedEffects'] as const).forEach(key => {
+    clearChipCacheByKey(chipRoot, key)
+  })
 }
 

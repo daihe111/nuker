@@ -546,29 +546,10 @@ export function patchMutationSync(
 ): void {
   // commit 视图变化
   commitProps(chip.elm, props)
-
-  // commit 完成后闲时任务处理，闲时任务无论是立即执行还是调度执行，都要
-  // 保证闲时任务执行时紧邻 commit 任务，以确保 commit - idle 之后视图
-  // 与虚拟节点的数据状态同步:
-  // single commit -> single idle ✓
-  // convergent commits -> convergent idles ✓
-  const idleJob = () => {
+  // 缓存闲时任务，将最新的属性状态补偿到对应的 chip 上
+  cacheSyncIdleJob(() => {
     chip.props = extend(chip.props, props)
-  }
-  if (renderMode === NukerRenderModes.CONCURRENT) {
-    // 如果框架渲染模式是 concurrent，同步渲染副作用执行时优先 commit
-    // 视图变化，并将闲时任务缓存起来，等一批同步渲染任务全部执行完后再
-    // 批量同步执行 commit 阶段缓存的闲时任务
-    // (convergent commits -> convergent idles)
-    cacheSyncIdleJob(idleJob, chipRoot)
-  } else {
-    // 如果框架渲染模式是 batch sync preferentially，idle 任务须在 
-    // commit 后立即执行 (single commit -> single idle)
-    // 由于批量同步优先模式下同步渲染任务在一个 event loop 中的执行时机
-    // 是不可控的，如果在 event loop 末尾批量执行闲时任务，可能会导致
-    // commit、idle 之间插入其他任务，因此需要在 commit 后立即执行 idle
-    idleJob()
-  }
+  }, chipRoot)
 }
 
 /**

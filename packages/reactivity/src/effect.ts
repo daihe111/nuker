@@ -19,6 +19,10 @@ export interface EffectOptions {
   onRunned?: () => void
 }
 
+export type EffectCollector<T> = (ctx: Effect<T>) => T
+
+export type EffectDispatcher<T> = (result: T, ctx: Effect<T>) => unknown
+
 export interface Effect<T = any> extends EffectOptions, Job<T> {
   (): unknown // 返回值来源于 dispatcher
   isEffect: boolean
@@ -27,8 +31,8 @@ export interface Effect<T = any> extends EffectOptions, Job<T> {
   id?: number | string
   isActive: boolean
   stores: Set<Set<Effect>>
-  collector: (ctx: Effect) => T
-  dispatcher: (result: T, ctx: Effect) => unknown
+  collector: EffectCollector<T>
+  dispatcher: EffectDispatcher<T>
   [key: string]: any
 }
 
@@ -54,25 +58,30 @@ export const ITERATE_PROXY_KEYS = {
   COLLECTION_VALUE_ITERATE_KEY: Symbol('collection value iterate key')
 }
 
-let id = 0
+let id = 0 // effect id
 let currentEffect: Effect | null = null // 当前处于激活态的 effect
 const store = new WeakMap()
-// 全局 effect 收集开关
-let collectingFlag = CollectingFlags.COLLECTING_OPENED
+let collectingFlag = CollectingFlags.COLLECTING_OPENED // 全局 effect 收集开关
 
-// 收集时需要做什么，派发时需要做什么
+/**
+ * 声明一个全新的副作用
+ * @param collector 
+ * @param dispatcher 
+ * @param options 
+ */
 export function effect<T = any>(
-  collector: (ctx: Effect) => T, // 传入 collector 旨在保证拦截器收集到正确的 effect，防止收集到与数据不对应的 effect
-  dispatcher: (data: T, ctx: Effect) => unknown,
+  collector: EffectCollector<T>, // 传入 collector 旨在保证拦截器收集到正确的 effect，防止收集到与数据不对应的 effect
+  dispatcher: EffectDispatcher<T>,
   options: EffectOptions = {}
 ): Effect {
   const effect: Effect = createEffect(collector, dispatcher, options)
   if (options.lazy) {
     // effect 为惰性，不立即执行
     if (options.collectWhenLazy) {
-      pushEffect(effect)
+      const previousEffect: Effect<T> = currentEffect
+      currentEffect = effect
       collector(effect)
-      popEffect()
+      currentEffect = previousEffect
     }
   } else {
     // effect 立即执行
@@ -81,15 +90,26 @@ export function effect<T = any>(
   return effect
 }
 
-// 向目标 effect 注入信息
+/**
+ * 向目标 effect 注入信息
+ * @param effect 
+ * @param key 
+ * @param value 
+ */
 export function injectIntoEffect(effect: Effect, key: string, value: any): Effect {
   effect[key] = value
   return effect
 }
 
+/**
+ * 创建副作用
+ * @param collector 
+ * @param dispatcher 
+ * @param options 
+ */
 export function createEffect<T = any>(
-  collector: (ctx: Effect) => T,
-  dispatcher: (data: T, ctx: Effect) => unknown,
+  collector: EffectCollector<T>,
+  dispatcher: EffectDispatcher<T>,
   options: EffectOptions = {}
 ): Effect {
   const runner = (effect: Effect): any => {
@@ -129,9 +149,15 @@ export function createEffect<T = any>(
   return effect
 }
 
-// e.g. effect process steps:
-// pushEffect -> collector(collect -> dispatch -> collect -> dispatch ...)
-// -> popEffect -> disableCollecting -> dispatcher -> enableCollecting
+/**
+ * effect 收集
+ * e.g. effect process steps:
+ * pushEffect -> collector(collect -> dispatch -> collect -> dispatch ...)
+ * -> popEffect -> disableCollecting -> dispatcher -> enableCollecting
+ * @param target 
+ * @param key 
+ * @param type 
+ */
 export function collect(
   target: object,
   key: unknown,
@@ -161,6 +187,14 @@ export function collect(
   }
 }
 
+/**
+ * effect 派发
+ * @param target 
+ * @param key 
+ * @param type 
+ * @param oldValue 
+ * @param value 
+ */
 export function dispatch(
   target: object,
   key: unknown,
@@ -186,7 +220,12 @@ export function dispatch(
   })
 }
 
-// 数据源、属性 key 是否命中白名单
+/**
+ * 数据源、属性 key 是否命中白名单
+ * @param source 
+ * @param key 
+ * @param whiteList 
+ */
 export function isInWhiteList(
   source: object,
   key: unknown,
@@ -204,6 +243,10 @@ export function isInWhiteList(
   return ret
 }
 
+/**
+ * 卸载无效 effect
+ * @param effect 
+ */
 export function teardownEffect(effect: Effect) {
   const stores = effect.stores
   stores.forEach(s => {

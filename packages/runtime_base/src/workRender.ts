@@ -149,7 +149,6 @@ export function render(
   })
   } else {
     initScheduler({
-      isDeepFirst: true,
       ...rm === NukerRenderModes.CONCURRENT ? {
         onConvergentJobsFinished: performSyncIdleWork.bind(null, chipRoot)
       } : {}

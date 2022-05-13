@@ -61,7 +61,7 @@ export interface JobNode {
   delay?: number
   isExpired?: boolean
   convergentable?: boolean
-  root?: JobNode
+  type?: number
   hooks?: JobHooks
   scopedSnapshot?: ListAccessor<SnapshotNode> // 当前任务节点的子任务快照，测试环境可为祖先任务创建子任务的快照用于调度分析
 
@@ -86,6 +86,12 @@ export const enum JobPriorities {
   NORMAL = 2, // 正常优先级，默认值
   LOW = 3, // 低优先级
   IDLE = 4 // 闲置优先级，永远不会过期
+}
+
+// 任务节点所属队列类型
+export const enum JobNodeTypes {
+  MAIN = 0,
+  BACKUP = 1
 }
 
 export const JobTimeouts = {
@@ -266,7 +272,19 @@ export function registerJob(
   const cache: JobNode = schedulerContext.jobCache.get(job)
   if (cache) {
     if (expirationTime < cache.expirationTime) {
-      // 将旧的任务出队，并以旧任务为插入锚点注册新的任务
+      // 为已存在的任务节点提级
+      cache.timeout = timeout
+      cache.expirationTime = expirationTime
+      if (cache.type === JobNodeTypes.MAIN) {
+        // 如果缓存任务在主任务队列，则对该任务进行提级转移处理
+        // 如果缓存任务在备选任务队列，则等待其进入主任务队列时计算其插入位置即可
+        if (!isRootOfMain(cache, schedulerContext)) {
+          // 非队头任务节点有提升排序的空间，将该任务节点向队列前方移动至合适的位置
+          const anchor: JobNode = cache.previous
+          removeJob(cache, schedulerContext)
+          pushJobToMain(cache, schedulerContext, anchor)
+        }
+      }
     } else {
       // 新注册任务在调度队列中已存在，且不会插入到已有任务前面，则忽略该任务
       return null
@@ -515,10 +533,12 @@ export function downgradeToIdle(jobNode: JobNode, ctx: SchedulerContext): void {
   jobNode.priority = JobPriorities.IDLE
   jobNode.timeout = JobTimeouts.IDLE
   jobNode.expirationTime = jobNode.startTime + JobTimeouts.IDLE
+  // 将降级为最低优先级的任务移动至主任务队列尾部
+  pushJobToMain(popJobOutOfMain(ctx), ctx)
 }
 
-export function head(JobNode: JobNode): JobNode | null {
-  return JobNode.next || null
+export function head(root: JobNode): JobNode {
+  return root
 }
 
 export function shouldYield(ctx: SchedulerContext) {
@@ -691,8 +711,22 @@ export function createJobNode(
   }
 }
 
-export function isRoot(jobNode: JobNode): boolean {
-  return jobNode.job === null
+/**
+ * 任务节点是否为主任务队列的根节点
+ * @param jobNode 
+ * @param ctx 
+ */
+export function isRootOfMain(jobNode: JobNode, ctx: SchedulerContext): boolean {
+  return jobNode === ctx.jobListRoot
+}
+
+/**
+ * 任务节点是否为备选任务队列的根节点
+ * @param jobNode 
+ * @param ctx 
+ */
+export function isRootOfBackup(jobNode: JobNode, ctx: SchedulerContext): boolean {
+  return jobNode === ctx.backupListRoot
 }
 
 /**
@@ -702,12 +736,15 @@ export function isRoot(jobNode: JobNode): boolean {
  * 后注册的靠近队尾，尾部向前遍历在大部分 case 下都能用最少的遍历次数找到
  * 任务的目标插入位置
  * 队列为空
- * @param job 
- * @param jobRoot 
+ * 可指定用于插入位置计算的起始位置锚点
+ * @param jobNode 
+ * @param ctx 
+ * @param anchor
  */
 export function pushJobToMain(
   jobNode: JobNode,
-  ctx: SchedulerContext
+  ctx: SchedulerContext,
+  anchor?: JobNode
 ): boolean {
   if (!ctx.jobListRoot) {
     // 创建双向循环链表
@@ -716,13 +753,14 @@ export function pushJobToMain(
     return true
   }
 
-  const lastNode: JobNode = ctx.jobListRoot.previous
+  const lastNode: JobNode = anchor || ctx.jobListRoot.previous
   let currentNode: JobNode = lastNode
-  while (currentNode !== null && !isRoot(currentNode)) {
+  while (currentNode !== null && !isRootOfMain(currentNode, ctx)) {
     if (jobNode.expirationTime >= currentNode.expirationTime) {
       jobNode.previous = currentNode
       jobNode.next = currentNode.next
       currentNode.next = currentNode.next.previous = jobNode
+      jobNode.type = JobNodeTypes.MAIN
       return true
     }
     currentNode = currentNode.previous
@@ -738,8 +776,8 @@ export function pushJobToMain(
  * 后注册的靠近队尾，尾部向前遍历在大部分 case 下都能用最少的遍历次数找到
  * 任务的目标插入位置
  * 队列为空
- * @param job 
- * @param jobRoot 
+ * @param jobNode 
+ * @param ctx 
  */
 export function pushJobToBackup(
   jobNode: JobNode,
@@ -754,11 +792,12 @@ export function pushJobToBackup(
 
   const lastNode: JobNode = ctx.backupListRoot.previous
   let currentNode: JobNode = lastNode
-  while (currentNode !== null && !isRoot(currentNode)) {
+  while (currentNode !== null && !isRootOfBackup(currentNode, ctx)) {
     if (jobNode.startTime >= currentNode.startTime) {
       jobNode.previous = currentNode
       jobNode.next = currentNode.next
       currentNode.next = currentNode.next.previous = jobNode
+      jobNode.type = JobNodeTypes.BACKUP
       return true
     }
     currentNode = currentNode.previous

@@ -109,20 +109,23 @@ export const enum ReconcilingCellStatuses {
 }
 
 export const enum NukerRenderModes {
+  // nuker 的默认全局渲染模式
   // 每个 event loop 结束时批量执行当前 event loop 收集的渲染任务，所有渲染任务
   // 一次性同步执行完，中途不可打断
   BATCH_SYNC = 0,
-  // nuker 的默认全局渲染模式
-  // 批量执行当前 event loop 中收集到的同步渲染副作用，concurrent 任务交给
-  // 任务调度器去进行调度，由于调度系统存在时间片，因此后续 event loop 中的
-  // 同步渲染任务可以中途插入执行，但后续的 concurrent 任务会按顺序进行调度
-  BATCH_SYNC_PREFERENTIALLY = 1,
-  // 并发渲染模式，根据每个渲染副作用的优先级进行调度，决定渲染任务执行的时机、顺序
+  // 渲染任务支持时间切片，但无优先级调度，渲染任务按照注册时间依次执行
+  // 不使用 js event loop & scheduler 双调度的原因:
+  // 1. 跨调度器通信困难，彼此信息不共享，每条调度线都无法取得对另一条
+  //    调度线的完全控制权，比如我们无法感知到，在 scheduler 两个相邻时
+  //    间片之间 js event loop 线的渲染任务执行情况
+  // 2. 不同调度线的任务之间可能相互插入耦合，不利于任务的控制、追踪
+  TIME_SPLICING = 1,
+  // 并发渲染模式，根据每个渲染副作用的优先级进行调度，决定渲染任务执行的时机、顺序、行为
   CONCURRENT = 2
 }
 
 export let currentRenderingInstance: ComponentInstance | VirtualInstance = null // 当前正在执行渲染工作的组件 instance
-export let renderMode: number = NukerRenderModes.BATCH_SYNC_PREFERENTIALLY // 框架的渲染模式
+export let renderMode: number = NukerRenderModes.TIME_SPLICING // 框架的渲染模式
 let mutableHookStrategy: number // UI 变化后生命周期的触发策略
 
 /**
@@ -136,7 +139,7 @@ export function render(
   container: Element | string,
   { renderMode: rm, mutableHookStrategy: mhs }: NukerRenderOptions
 ): Element {
-  renderMode = isNumber(rm) ? rm : NukerRenderModes.BATCH_SYNC_PREFERENTIALLY
+  renderMode = isNumber(rm) ? rm : NukerRenderModes.TIME_SPLICING
   mutableHookStrategy = isNumber(mhs) ? mhs : HookInvokingStrategies.ON_IDLE
   const chip: Chip = createChip(appContent)
   const chipRoot: ChipRoot = createChipRoot(chip)
@@ -664,19 +667,14 @@ export function createRenderEffectForIterableChip(
 
 /**
  * 渲染副作用自带的调度器
- * 当渲染副作用被触发时，会优先执行该调度器对渲染副作用执行合适的调度
+ * 当渲染副作用被触发时，会优先执行该调度器对渲染副作用执行合适的调度注册
  * @param effect 
  */
 export function renderEffectScheduler(effect: Effect): void {
   switch (renderMode) {
-    case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
-      // 双线调度模型:
-      // ·同步任务由 js event loop 调度
-      // ·concurrent 任务由框架调度系统调度
-      effect.effectType === RenderEffectTypes.CONCURRENT ?
-        // 仅使用调度系统的时间切片能力，优先级统一使用默认优先级
-        registerJob(effect) :
-        pushRenderEffectToBuffer(effect)
+    case NukerRenderModes.TIME_SPLICING:
+      // 渲染任务仅进行时间分片，无优先级
+      registerJob(effect)
       break
     case NukerRenderModes.CONCURRENT:
       // concurrent 渲染模式下，根据当前事件优先级将 renderEffect 作为任务注册进调度系统，
@@ -685,22 +683,10 @@ export function renderEffectScheduler(effect: Effect): void {
       break
     case NukerRenderModes.BATCH_SYNC:
     default:
-      // BATCH_SYNC_PREFERENTIALLY 渲染模式下，将当前 effect 推入渲染任务缓冲区
+      // TIME_SPLICING 渲染模式下，将当前 effect 推入渲染任务缓冲区
       pushRenderEffectToBuffer(effect)
       break
   }
-  if (renderMode === NukerRenderModes.BATCH_SYNC) {
-    // BATCH_SYNC_PREFERENTIALLY 渲染模式下，将当前 effect 推入渲染任务缓冲区
-    pushRenderEffectToBuffer(effect)
-  } else {
-    
-  }
-  
-  // CONCURRENT 渲染模式下，将 effect 注册进调度系统，以保证渲染任务按照优先级策略调度执行
-  renderMode === NukerRenderModes.BATCH_SYNC_PREFERENTIALLY ?
-    pushRenderEffectToBuffer(effect):
-    // concurrent 渲染模式下，根据当前事件优先级将 renderEffect 作为任务注册进调度系统
-    registerJob(effect, currentEventPriority)
 }
 
 /**
@@ -721,9 +707,9 @@ export function handleChildJobOfRenderEffect(
     newData
   )
   switch (renderMode) {
-    case NukerRenderModes.BATCH_SYNC_PREFERENTIALLY:
+    case NukerRenderModes.TIME_SPLICING:
     case NukerRenderModes.CONCURRENT:
-      // BATCH_SYNC_PREFERENTIALLY & CONCURRENT 渲染模式下 renderEffect 整体作为任务
+      // TIME_SPLICING & CONCURRENT 渲染模式下 renderEffect 整体作为任务
       // 注册进调度系统，因此此处返回 renderEffect 对应的子任务，即实际的协调逻辑
       return job
     case NukerRenderModes.BATCH_SYNC:

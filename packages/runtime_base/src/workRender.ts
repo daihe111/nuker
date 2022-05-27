@@ -11,17 +11,14 @@ import {
   DynamicValueGetter,
   ChipEffectUnit,
   StaticValue,
-  ChipPropValue,
   getPropLiteralValue,
   getPointerChip,
   createChipRoot,
-  createChip,
-  ChipTag
+  createChip
 } from "./chip";
 import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ } from "../../share/src";
 import {
   registerJob,
-  Job,
   initScheduler
 } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance } from "./component";
@@ -32,11 +29,12 @@ import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from ".
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, initRenderEffectBuffer } from "./renderEffectBuffer";
 import {
-  cacheReconcileIdleJob,
-  cacheSyncIdleJob,
+  cacheIdleJob,
   replaceChipContext,
-  performSyncIdleWork,
-  teardownReconcileChipCache
+  performIdleWork,
+  teardownChipCache,
+  teardownAbandonedEffects,
+  teardownDeletion
 } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 import { currentEventPriority } from "../../runtime_dom/src/event";
@@ -147,13 +145,17 @@ export function render(
     initRenderEffectBuffer({
       onFlushed: () => {
         performCommitWork(chipRoot)
-        performSyncIdleWork(chipRoot)
+        performIdleWork(chipRoot)
       }
   })
   } else {
     initScheduler({
       ...rm === NukerRenderModes.CONCURRENT ? {
-        onConvergentJobsFinished: performSyncIdleWork.bind(null, chipRoot)
+        // 批同步任务开始收敛前重置全局渲染缓存信息
+        onConvergentJobsStarted: teardownChipCache.bind(null, chipRoot),
+        // 批同步任务结束收敛后批量执行 commit 阶段产生的闲时任务，并重置
+        // 全局渲染缓存信息
+        onConvergentJobsFinished: performIdleWork.bind(null, chipRoot)
       } : {}
     })
   }
@@ -549,7 +551,7 @@ export function patchMutationSync(
   // commit 视图变化
   commitProps(chip.elm, props)
   // 缓存闲时任务，将最新的属性状态补偿到对应的 chip 上
-  cacheSyncIdleJob(() => {
+  cacheIdleJob(() => {
     chip.props = extend(chip.props, props)
   }, chipRoot)
 }
@@ -731,7 +733,7 @@ export function performReconcileSync(chip: Chip, chipRoot: ChipRoot): void {
     if (current === ancestorChip) {
       if (current.phase === ChipPhases.PENDING) {
         const pointer: Chip = getPointerChip(chip.wormhole)
-        cacheReconcileIdleJob(
+        cacheIdleJob(
           replaceChipContext.bind(null, chip, chip.wormhole, pointer),
           chipRoot
         )
@@ -838,11 +840,11 @@ export function genReconcileJob(
             // 重新开始时卸载已失效的状态缓存，比如执行到半途但被其他任务插入，
             // 当该任务重新开始时由于要完全从头执行，因此将任务被打断前积累的
             // 失效状态缓存作为垃圾信息清理掉
-            teardownReconcileChipCache(chipRoot)
+            teardownChipCache(chipRoot)
           }
 
           const pointer: Chip = getPointerChip(chip.wormhole)
-          cacheReconcileIdleJob(
+          cacheIdleJob(
             replaceChipContext.bind(null, chip, chip.wormhole, pointer),
             chipRoot
           )
@@ -1023,9 +1025,11 @@ export function completeReconcile(
 }
 
 /**
- * 初始化内部渲染内容不确定的 chip 节点
- * 初始化阶段通过 render 渲染器生成实际的 children，
- * 并创建渲染副作用同时进行依赖收集
+ * 协调过程中首次访问 chip 节点
+ * 1. 完成自身的渲染初始化工作
+ * 2. 建立新旧子代节点的映射关系，确定好子代节点的删除、移动
+ * 3. 卸载旧的 chip 节点对应的 effects，因为重新执行 render
+ *    函数会对新节点中的动态数据重新进行依赖收集
  * @param chip 
  * @param chipRoot 
  */
@@ -1052,7 +1056,7 @@ export function initReconcileForChip(chip: Chip, chipRoot: ChipRoot): Chip {
   // 卸载当前 chip 对应的旧 chip (相似节点) 上的 effects，当前
   // chip 初始化时会重新对新的动态数据进行渲染副作用收集
   if (wormhole) {
-    cacheAbandonedEffect(wormhole.effects?.first, chipRoot)
+    cacheIdleJob(teardownAbandonedEffects.bind(null, wormhole), chipRoot)
   }
 
   return chip
@@ -1280,7 +1284,7 @@ export function genRenderPayloadsForDeletions(deletions: Chip[], chipRoot: ChipR
       deletion
     )
     cacheRenderPayload(payload, chipRoot)
-    cacheAbandonedEffect(deletion.effects?.first, chipRoot)
+    cacheIdleJob(teardownDeletion.bind(null, deletion), chipRoot)
   }
 }
 
@@ -1312,10 +1316,6 @@ export function reconcileProps(
 
     if (propName in oldProps) {
       let oldValue = oldProps[propName]
-      if (isFunction(oldValue)) {
-        // 对应的新属性会重新收集渲染副作用，因此旧属性对应的 effect 须释放
-        cacheAbandonedEffect(oldValue.effect, chipRoot)
-      }
       // 获取旧属性值的字面量
       oldValue = getPropLiteralValue(oldValue)
       if (value !== oldValue) {
@@ -1332,56 +1332,10 @@ export function reconcileProps(
       continue
     }
 
-    const value: ChipPropValue = oldProps[propName]
-    if (isFunction(value)) {
-      cacheAbandonedEffect(value.effect, chipRoot)
-    }
-
     ret[propName] = PROP_TO_DELETE
   }
 
   return ret
-}
-
-/**
- * 将已失效的 effect 缓存到 chipRoot
- * @param effect 
- * @param chipRoot 
- */
-export function cacheAbandonedEffect(
-  effect: Effect | Effect[] | ChipEffectUnit,
-  chipRoot: ChipRoot
-): Effect | Effect[] | ChipEffectUnit {
-  if (isArray(effect)) {
-    // 缓存 effect 数组
-    for (let i = 0; i < effect.length; i++) {
-      cacheAbandonedEffect(effect[i], chipRoot)
-    }
-  } else if (effect.next) {
-    // 缓存 effect 链表
-    let currentUnit = (effect as ChipEffectUnit)
-    while (currentUnit !== null) {
-      cacheAbandonedEffect(currentUnit.effect, chipRoot)
-      currentUnit = currentUnit.next
-    }
-  } else {
-    // single effect
-    const effects = chipRoot.abandonedEffects
-    const effectNode: ChipEffectUnit = {
-      effect: (effect as Effect),
-      next: null
-    }
-    if (effects) {
-      effects.last = effects.last.next = effectNode
-    } else {
-      chipRoot.abandonedEffects = {
-        first: effectNode,
-        last: effectNode
-      }
-    }
-  }
-
-  return effect
 }
 
 /**

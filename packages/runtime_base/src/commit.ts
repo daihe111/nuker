@@ -1,7 +1,7 @@
 import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
 import { Chip, ChipRoot } from "./chip";
-import { performReconcileIdleWork } from "./idle";
+import { performIdleWork } from "./idle";
 import { isFunction } from "../../share/src";
 
 // 待删除 prop 的占位标志位
@@ -29,7 +29,7 @@ export function performCommitWork(chipRoot: ChipRoot): null {
   }
 
   // 进入 idle 阶段，批量执行闲时任务，如 chip 状态补偿任务、过期信息清理任务...
-  performReconcileIdleWork(chipRoot)
+  performIdleWork(chipRoot)
   return null
 }
 

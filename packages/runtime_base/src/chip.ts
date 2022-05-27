@@ -132,14 +132,10 @@ export interface Chip extends ChipCore {
 export interface ChipRoot {
   // chip 根节点
   root: Chip
-  // 协调任务产生的闲时任务队列
-  reconcileIdleJobs: ListAccessor<IdleJobUnit> | void
-  // 同步任务产生的闲时任务队列
-  syncIdleJobs: ListAccessor<IdleJobUnit> | void
+  // reconcile & commit 阶段产生的闲时任务队列
+  idleJobs: ListAccessor<IdleJobUnit> | void
   // 渲染描述载荷队列
   renderPayloads: ListAccessor<RenderPayloadNode>
-  // 当前渲染周期内缓存的已失效 effect，这些 effect 将在 idle 阶段被释放
-  abandonedEffects: ListAccessor<ChipEffectUnit>
 
   // 改变视图生命周期的缓存队列
   [LifecycleHooks.MOUNTED]?: ListAccessor<LifecycleUnit>
@@ -233,10 +229,8 @@ export function isLastChildOfChip(child: Chip): boolean {
 export function createChipRoot(root: Chip): ChipRoot {
   return {
     root,
-    reconcileIdleJobs: null,
-    syncIdleJobs: null,
+    idleJobs: null,
     renderPayloads: null,
-    abandonedEffects: null,
     // 改变视图生命周期的缓存队列
     [LifecycleHooks.MOUNTED]: null,
     [LifecycleHooks.UPDATED]: null

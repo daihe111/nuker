@@ -15,29 +15,16 @@ import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
 import { ListAccessor } from "../../share/src/shareTypes";
 
 /**
- * 同步任务批次中执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
+ * 执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
  * @param chipRoot 
  */
-export function performSyncIdleWork(chipRoot: ChipRoot): void {
-  flushIdle(chipRoot.syncIdleJobs)
-  teardownSyncChipCache(chipRoot)
-}
-
-/**
- * concurrent 任务批次中执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
- * @param chipRoot 
- */
-export function performReconcileIdleWork(chipRoot: ChipRoot): void {
-  flushIdle(chipRoot.reconcileIdleJobs)
-  // 卸载缓存的已失效 effects
-  teardownAbandonedEffects(chipRoot)
-  // 清除已废弃 effect 缓存
-  teardownReconcileChipCache(chipRoot)
+export function performIdleWork(chipRoot: ChipRoot): void {
+  flushIdle(chipRoot.idleJobs)
   // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
   [LifecycleHooks.MOUNTED, LifecycleHooks.UPDATED].forEach((n: string) => {
     invokeLifecycle(n, chipRoot)
-    chipRoot[n] = null
   })
+  teardownChipCache(chipRoot)
 }
 
 /**
@@ -171,50 +158,20 @@ function createIdleNode(job: Function): IdleJobUnit {
 }
 
 /**
- * 将协调闲时任务缓存至闲时任务队列
+ * 将闲时任务缓存至闲时任务队列
  * @param job 
  * @param chipRoot 
  */
-export function cacheReconcileIdleJob(job: Function, chipRoot: ChipRoot): Function {
-  const idleJobs: ListAccessor<IdleJobUnit> | void = chipRoot.reconcileIdleJobs
+export function cacheIdleJob(job: Function, chipRoot: ChipRoot): Function {
+  const idleJobs: ListAccessor<IdleJobUnit> | void = chipRoot.idleJobs
   const jobNode: IdleJobUnit = createIdleNode(job)
   if (idleJobs) {
     idleJobs.last = idleJobs.last.next = jobNode
   } else {
-    chipRoot.reconcileIdleJobs = createListAccessor<IdleJobUnit>(jobNode)
+    chipRoot.idleJobs = createListAccessor<IdleJobUnit>(jobNode)
   }
 
   return job
-}
-
-/**
- * 将同步闲时任务缓存至闲时任务队列
- * @param job 
- * @param chipRoot 
- */
-export function cacheSyncIdleJob(job: Function, chipRoot: ChipRoot): Function {
-  const idleJobs: ListAccessor<IdleJobUnit> | void = chipRoot.syncIdleJobs
-  const jobNode: IdleJobUnit = createIdleNode(job)
-  if (idleJobs) {
-    idleJobs.last = idleJobs.last.next = jobNode
-  } else {
-    chipRoot.syncIdleJobs = createListAccessor<IdleJobUnit>(jobNode)
-  }
-
-  return job
-}
-
-/**
- * idle 阶段将本轮 reconcile 缓存的无效 effect 进行集中卸载
- * @param chipRoot 
- */
-export function teardownAbandonedEffects(chipRoot: ChipRoot): void {
-  const effects = chipRoot.abandonedEffects
-  let currentUnit: ChipEffectUnit = effects.first
-  while (currentUnit !== null) {
-    teardownEffect(currentUnit.effect)
-    currentUnit = currentUnit.next
-  }
 }
 
 function clearChipCacheByKey(chipRoot: ChipRoot, key: string): void {
@@ -222,30 +179,34 @@ function clearChipCacheByKey(chipRoot: ChipRoot, key: string): void {
 }
 
 /**
- * 卸载 concurrent 任务产生的缓存
+ * 卸载 chip 根节点上的全局渲染缓存信息
  * @param chipRoot 
  */
-export function teardownReconcileChipCache(chipRoot: ChipRoot): void {
-  (['reconcileIdleJobs', 'renderPayloads', 'abandonedEffects'] as const).forEach(key => {
+export function teardownChipCache(chipRoot: ChipRoot): void {
+  ([
+    'reconcileIdleJobs',
+    'renderPayloads',
+    LifecycleHooks.MOUNTED,
+    LifecycleHooks.UPDATED
+  ] as const).forEach(key => {
     clearChipCacheByKey(chipRoot, key)
   })
 }
 
 /**
- * 卸载同步任务产生的缓存
+ * 批量卸载 effect
  * @param chipRoot 
  */
-export function teardownSyncChipCache(chipRoot: ChipRoot): void {
-  chipRoot.syncIdleJobs = null
+export function teardownAbandonedEffects(chip: Chip): void {
+  const effects = chip.effects
+  let currentUnit: ChipEffectUnit = effects.first
+  while (currentUnit !== null) {
+    teardownEffect(currentUnit.effect)
+    currentUnit = currentUnit.next
+  }
+  chip.effects = null
 }
 
-/**
- * 批量同步渲染模式下
- * @param chipRoot 
- */
-export function teardownChipCacheInBatchSyncMode(chipRoot: ChipRoot): void {
-  (['syncIdleJobs', 'renderPayloads', 'abandonedEffects'] as const).forEach(key => {
-    clearChipCacheByKey(chipRoot, key)
-  })
-}
+export function teardownDeletion(deletion: Chip): void {
 
+}

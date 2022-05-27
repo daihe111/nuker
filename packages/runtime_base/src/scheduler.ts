@@ -856,6 +856,21 @@ export function removeJob(jobNode: JobNode, ctx: SchedulerContext): void {
 }
 
 /**
+ * 任务反注册，从调度系统中对应任务队列移出
+ * 调度系统对外暴露 API
+ * @param job
+ */
+export function unregisterJob(job: Job): boolean {
+  const jobContainer: JobNode = schedulerContext.jobCache.get(job)
+  if (jobContainer) {
+    removeJob(jobContainer, schedulerContext)
+    return true
+  } else {
+    return false
+  }
+}
+
+/**
  * 目标队列是否为空
  * @param listRoot 
  */

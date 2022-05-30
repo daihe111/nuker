@@ -10,9 +10,10 @@
 
 import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot, ChipEffectUnit } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
-import { extend, createListAccessor } from "../../share/src";
+import { extend, createListAccessor, isArray } from "../../share/src";
 import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
 import { ListAccessor } from "../../share/src/shareTypes";
+import { unregisterJob } from "./scheduler";
 
 /**
  * 执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
@@ -201,12 +202,28 @@ export function teardownAbandonedEffects(chip: Chip): void {
   const effects = chip.effects
   let currentUnit: ChipEffectUnit = effects.first
   while (currentUnit !== null) {
+    // 将 effect 从依赖仓库、调度队列中移除
     teardownEffect(currentUnit.effect)
+    unregisterJob(currentUnit.effect)
     currentUnit = currentUnit.next
   }
   chip.effects = null
 }
 
+/**
+ * 将已移除 chip 节点上的状态信息卸载
+ * @param deletion 
+ */
 export function teardownDeletion(deletion: Chip): void {
-
+  teardownAbandonedEffects(deletion)
+  const children: ChipChildren = deletion.children
+  if (isArray(children)) {
+    // array chips
+    for (let i = 0; i < children.length; i++) {
+      teardownAbandonedEffects(children[i])
+    }
+  } else {
+    // single chip
+    teardownAbandonedEffects(children)
+  }
 }

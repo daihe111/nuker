@@ -4,8 +4,8 @@ import {
   isReservedTag,
   isReservedComponentTag
 } from './domOptions';
-import { isObject, isArray, isString, isNumber, isFunction, extend } from '../../share/src';
-import { RenderPayloadNode, ChildrenRenderer } from "./workRender";
+import { isObject, isArray, isFunction, extend } from '../../share/src';
+import { RenderPayloadNode } from "./workRender";
 import { VirtualInstance, VirtualOptions } from "./virtualChip";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { LifecycleHooks } from "./lifecycle";
@@ -25,7 +25,7 @@ export type ChipPropValue = DynamicValueGetter | StaticValue
 
 export type ChipProps = Record<string, ChipPropValue>
 
-export type ChipChildren = | Chip | Chip[] | ChildrenRenderer
+export type ChipChildren = | Chip | Chip[]
 
 export const enum ChipFlags {
   IS_CHIP = '__n_isChip',

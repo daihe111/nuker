@@ -46,11 +46,6 @@ export interface ReconcileChipPair {
   newChip: Chip | null
 }
 
-export interface ChildrenRenderer {
-  source?: any
-  render: (source?: any) => ChipChildren
-}
-
 export interface DynamicRenderData {
   props?: Record<string | number | symbol, any>
   children?: ChipChildren
@@ -1271,7 +1266,11 @@ export function reconcileToGenRenderPayload(
   return payload
 }
 
-// 根据缓存的待删除子节点生成对应的 render payload
+/**
+ * 根据缓存的待删除子节点生成对应的 render payload
+ * @param deletions 
+ * @param chipRoot 
+ */
 export function genRenderPayloadsForDeletions(deletions: Chip[], chipRoot: ChipRoot): void {
   for (let i = 0; i < deletions.length; i++) {
     const deletion = deletions[i]

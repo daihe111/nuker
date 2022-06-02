@@ -241,6 +241,14 @@ export function registerJob(
   delay: number = 0,
   options: JobOptions = EMPTY_OBJ
 ): Job {
+  // 任务 loop 执行过程中不允许注册新的任务，避免新的任务插队，插入父任务对应的子任务
+  // 序列中，打断子任务之间的执行连续性。被打断连续执行的父任务虽然可以在插入任务执行完毕
+  // 后重置为原始任务并完全重新执行，但这需要 loop 中执行每个任务前都要先检测任务是否被
+  // 其他任务打断，这是比较消耗性能的，因此我们不会这么处理
+  if (schedulerContext.isLoopRunning) {
+    return
+  }
+
   // 初始化任务的保质期
   if (!isNumber(timeout)) {
     switch (priority) {

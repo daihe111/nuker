@@ -25,7 +25,8 @@ export type ChipPropValue = DynamicValueGetter | StaticValue
 
 export type ChipProps = Record<string, ChipPropValue>
 
-export type ChipChildren = | Chip | Chip[]
+// 框架规定子节点必须已数组的形式声明，以减少不必要的子代节点格式化处理、运行时判断
+export type ChipChildren = | Chip[]
 
 export const enum ChipFlags {
   IS_CHIP = '__n_isChip',
@@ -199,9 +200,6 @@ export function getLastChipChild(children: ChipChildren): Chip {
   if (isArray(children)) {
     // array children
     return getChipChild(children, children.length - 1)
-  } else if (isObject(children)) {
-    // single child
-    return (children as Chip)
   } else {
     // invalid children
     return null

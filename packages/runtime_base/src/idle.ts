@@ -222,8 +222,5 @@ export function teardownDeletion(deletion: Chip): void {
     for (let i = 0; i < children.length; i++) {
       teardownAbandonedEffects(children[i])
     }
-  } else {
-    // single chip
-    teardownAbandonedEffects(children)
   }
 }

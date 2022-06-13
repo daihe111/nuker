@@ -9,7 +9,6 @@ import {
   ChipProps,
   getLastChipChild,
   DynamicValueGetter,
-  ChipEffectUnit,
   StaticValue,
   getPropLiteralValue,
   getPointerChip,
@@ -952,7 +951,7 @@ export function initReconcile(chip: Chip, lastChip: Chip, chipRoot: ChipRoot): C
       // 节点与之匹配
       const oldChildren: ChipChildren = wormhole?.children
       if (oldChildren && children) {
-        matchChipChildren(oldChildren, children)
+        connectChipChildren(oldChildren, children, chip)
       }
 
       nextChip = lastChild
@@ -1178,17 +1177,42 @@ export function completeReconcileForComponent(chip: Chip, chipRoot: ChipRoot): v
 
 /**
  * 建立 chip 子节点之间的映射关系，并生成部分子代节点对应的 render payload
- * 主要涉及子节点的删除、移动
+ * 主要涉及:
+ * 1. 旧子节点的移除
+ * 2. 新子节点的挂载
+ * 3. 新旧子节点的成对匹配
+ * 4. 新子节点的位置移动
  * @param oldChildren 
  * @param newChildren 
  */
-export function matchChipChildren(oldChildren: ChipChildren, newChildren: ChipChildren): void {
+export function connectChipChildren(
+  oldChildren: ChipChildren,
+  newChildren: ChipChildren,
+  parent: Chip
+): void {
   // todo 待删除子节点 render payload 创建、收容；
   // 子节点移动创建 render payload，并将其挂载到需要移动的 chip 上，等该
   // chip 进入回溯阶段再进行 render payload 的派发
+  if (oldChildren === null) {
+    // 无旧子节点，不做节点成对匹配
+    return
+  }
+
+  if (newChildren === null) {
+    // 无新子节点，不做节点成对匹配，但需要记录需要在回溯阶段移除的旧节点
+    parent.deletions = [...oldChildren]
+    return
+  }
+
+  // 新旧子节点序列均为常规的非空序列，进行新旧节点序列间的成对匹配
+  
 }
 
-// 缓存要删除的 chip
+/**
+ * 缓存要删除的 chip
+ * @param parent 
+ * @param deletion 
+ */
 export function cacheDeletions(parent: Chip, deletion: Chip): void {
   if (!isArray(parent.deletions)) {
     parent.deletions = []

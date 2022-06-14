@@ -13,7 +13,8 @@ import {
   getPropLiteralValue,
   getPointerChip,
   createChipRoot,
-  createChip
+  createChip,
+  isSameChip
 } from "./chip";
 import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ } from "../../share/src";
 import {
@@ -1205,6 +1206,40 @@ export function connectChipChildren(
   }
 
   // 新旧子节点序列均为常规的非空序列，进行新旧节点序列间的成对匹配
+  let s1: number = 0
+  let s2: number = 0
+  let e1: number = oldChildren.length - 1
+  let e2: number = newChildren.length - 1
+  const boundary: number = Math.max(e1, e2)
+
+  // 1. 序列头预处理
+  //    序列头部向后遍历，按照遍历指针匹配新旧子节点
+  while (s1 <= boundary) {
+    const c1: Chip = oldChildren[s1]
+    const c2: Chip = newChildren[s2]
+    if (isSameChip(c1, c2)) {
+      c2.wormhole = c1
+      s1++
+      s2++
+    } else {
+      break
+    }
+  }
+
+  // 2. 序列尾预处理
+  //    序列尾部向前遍历，按照遍历指针匹配新旧子节点
+  while (e1 >= s1 && e2 >= s2) {
+    const c1: Chip = oldChildren[e1]
+    const c2: Chip = newChildren[e2]
+    if (isSameChip(c1, c2)) {
+      c2.wormhole = c1
+      e1--
+      e2--
+    } else {
+      break
+    }
+  }
+
   
 }
 

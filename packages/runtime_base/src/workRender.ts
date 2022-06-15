@@ -1240,6 +1240,25 @@ export function connectChipChildren(
     }
   }
 
+  // 3. 旧节点序列全部预处理完毕，但新节点序列存在未匹配节点子序列
+  //    新节点序列中的未匹配子序列全部节点需做挂载，不需要匹配
+  if (s1 > e1) {
+    return
+  }
+
+  // 4. 新节点序列全部预处理完毕，但旧节点序列存在未匹配节点子序列
+  //    旧节点序列中的未匹配子序列全部节点需移除，将这部分待移除的节点
+  //    缓存到新的父节点，等到回溯到此父节点时再生成对应的节点移除
+  //    render payload
+  if (s2 > e2) {
+    for (let i = s1; i <= e1; i++) {
+      cacheDeletions(parent, oldChildren[i])
+    }
+
+    return
+  }
+
+  // 5. 非空不可预测新旧子序列匹配
   
 }
 

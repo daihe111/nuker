@@ -14,9 +14,10 @@ import {
   getPointerChip,
   createChipRoot,
   createChip,
-  isSameChip
+  isSameChip,
+  ChipKey
 } from "./chip";
-import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ } from "../../share/src";
+import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ, deleteProperty, hasOwn } from "../../share/src";
 import {
   registerJob,
   initScheduler
@@ -1259,7 +1260,50 @@ export function connectChipChildren(
   }
 
   // 5. 非空不可预测新旧子序列匹配
-  
+
+  // 建立旧节点 key - index 映射关系，用于新节点匹配对应的旧节点
+  const keyToIndex: Record<ChipKey, number> = createEmptyObject()
+  const unconnectedUnkeyedMap: Record<number, number> = createEmptyObject()
+  const oldToNew: Record<number, number> = createEmptyObject()
+  for (let i = s1; i <= e1; i++) {
+    const { key }: Chip = oldChildren[i]
+    if (key) {
+      keyToIndex[key] = i
+    } else {
+      unconnectedUnkeyedMap[i] = i
+    }
+  }
+
+  for (let i = s2; i <= e2; i++) {
+    const newChild: Chip = newChildren[i]
+    if (hasOwn(newChild, 'key')) {
+      const idx: number = keyToIndex[newChild.key]
+      if (
+        isNumber(idx) &&
+        newChild.tag === oldChildren[idx].tag
+      ) {
+        newChild.wormhole = oldChildren[idx]
+        oldToNew[idx] = i
+      }
+    } else {
+      for (const idx in unconnectedUnkeyedMap) {
+        if (oldChildren[idx].tag === newChild.tag) {
+          newChild.wormhole = oldChildren[idx]
+          oldToNew[idx] = i
+          deleteProperty(unconnectedUnkeyedMap, idx)
+          break
+        }
+      }
+    }
+  }
+
+  // 遍历旧节点序列，将待删除的未成对节点记录到父节点，等到回溯阶段
+  // 再生成对应的 render payload
+  for (let i = s1; i <= e1; i++) {
+    if (!isNumber(oldToNew[i])) {
+      cacheDeletions(parent, oldChildren[i])
+    }
+  }
 }
 
 /**

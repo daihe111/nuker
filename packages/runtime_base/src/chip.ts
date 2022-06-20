@@ -83,7 +83,7 @@ export const enum ChipPhases {
 
 export type ChipUnit = Chip | Chip | null
 
-export type ChipKey = string | number | symbol
+export type ChipKey = string | number
 
 // chip 是每个节点 (native dom | component) 的独立上下文，
 // 与节点本身共存，节点销毁时 chip 上下文一并销毁，并需要对上

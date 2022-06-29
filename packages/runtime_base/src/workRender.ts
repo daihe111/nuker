@@ -1260,11 +1260,13 @@ export function connectChipChildren(
   }
 
   // 5. 非空不可预测新旧子序列匹配
-
-  // 建立旧节点 key - index 映射关系，用于新节点匹配对应的旧节点
   const keyToIndex: Record<ChipKey, number> = createEmptyObject()
   const unconnectedUnkeyedMap: Record<number, number> = createEmptyObject()
   const oldToNew: Record<number, number> = createEmptyObject()
+  let lastConnectedOldIndex: number | string
+  let needMove: boolean = false
+
+  // 建立旧节点 key - index 映射关系，用于新节点匹配对应的旧节点
   for (let i = s1; i <= e1; i++) {
     const { key }: Chip = oldChildren[i]
     if (key) {
@@ -1283,12 +1285,20 @@ export function connectChipChildren(
         newChild.tag === oldChildren[idx].tag
       ) {
         newChild.wormhole = oldChildren[idx]
+        if (idx < lastConnectedOldIndex) {
+          needMove = true
+        }
+        lastConnectedOldIndex = idx
         oldToNew[idx] = i
       }
     } else {
-      for (const idx in unconnectedUnkeyedMap) {
+      for (let idx in unconnectedUnkeyedMap) {
         if (oldChildren[idx].tag === newChild.tag) {
           newChild.wormhole = oldChildren[idx]
+          if (idx < lastConnectedOldIndex) {
+            needMove = true
+          }
+          lastConnectedOldIndex = idx
           oldToNew[idx] = i
           deleteProperty(unconnectedUnkeyedMap, idx)
           break
@@ -1298,10 +1308,24 @@ export function connectChipChildren(
   }
 
   // 遍历旧节点序列，将待删除的未成对节点记录到父节点，等到回溯阶段
-  // 再生成对应的 render payload
+  // 再批量生成对应的 render payload
   for (let i = s1; i <= e1; i++) {
     if (!isNumber(oldToNew[i])) {
       cacheDeletions(parent, oldChildren[i])
+    }
+  }
+
+  // 计算出需要移动位置的节点，发生位置移动的节点一定是新旧节点成对匹配的
+  // 使用最长增长子序列计算出不需移动位置的新节点索引
+  const lis: Record<number, boolean> | null = needMove ?
+    getLongestIncreasingSubsequence(oldToNew) :
+    null
+  if (lis) {
+    for (let i = s2; i <= e2; i++) {
+      if (!lis[i]) {
+        // 未命中无需移动节点白名单，将对应 chip 节点标记为待移动状态
+        newChildren[i].move = true
+      }
     }
   }
 }
@@ -1485,4 +1509,12 @@ export function cacheRenderPayload(
   }
 
   return payload
+}
+
+/**
+ * 计算最长增长子序列
+ * @param map 
+ */
+export function getLongestIncreasingSubsequence(map: Record<number, number>): Record<number, boolean> {
+
 }

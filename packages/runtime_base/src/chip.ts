@@ -95,8 +95,9 @@ export interface Chip extends ChipCore {
   readonly id: number // 节点编号 id (自增)
   ref: ChipRef
   key?: ChipKey
-  elm: Element | null // 虚拟节点对应的实际 dom 容器
-  instance: ChipInstance | null
+  elm: Element // 虚拟节点对应的实际 dom 容器
+  move?: true // 节点是否需要移动
+  instance: ChipInstance
   directives?: unknown
   components?: unknown
   childMaySkip?: boolean // chip 的部分子代节点在 reconcile 阶段有可能被跳过，仅可迭代 fragment 会持有该属性

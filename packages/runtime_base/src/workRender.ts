@@ -1317,12 +1317,12 @@ export function connectChipChildren(
 
   // 计算出需要移动位置的节点，发生位置移动的节点一定是新旧节点成对匹配的
   // 使用最长增长子序列计算出不需移动位置的新节点索引
-  const lis: Record<number, boolean> | null = needMove ?
-    getLongestIncreasingSubsequence(oldToNew) :
+  const whitelist: Record<number, boolean> | null = needMove ?
+    computeUnmovedWhitelist(oldToNew) :
     null
-  if (lis) {
+  if (whitelist) {
     for (let i = s2; i <= e2; i++) {
-      if (!lis[i]) {
+      if (newChildren[i].wormhole && !whitelist[i]) {
         // 未命中无需移动节点白名单，将对应 chip 节点标记为待移动状态
         newChildren[i].move = true
       }
@@ -1512,9 +1512,9 @@ export function cacheRenderPayload(
 }
 
 /**
- * 计算最长增长子序列
+ * 计算出不需移动的节点白名单
  * @param map 
  */
-export function getLongestIncreasingSubsequence(map: Record<number, number>): Record<number, boolean> {
+export function computeUnmovedWhitelist(map: Record<number, number>): Record<number, boolean> {
 
 }

@@ -62,7 +62,7 @@ export type LifecycleHookList = ListAccessor<LifecycleUnit>
 export interface ComponentInstance {
   chip: Chip | null
   Component: Component
-  render: (source?: any) => Chip
+  render: (source?: any) => Chip[]
   refs: object[] | null
   [key: string]: any
 

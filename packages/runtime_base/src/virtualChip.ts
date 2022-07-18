@@ -1,6 +1,6 @@
 import { Chip, ChipChildren, DynamicValueGetter, ChipTypes } from "./chip";
 
-export type VirtualChipRender = (source?: any, sourceKey?: any) => ChipChildren
+export type VirtualChipRender = (source?: any, sourceKey?: any) => Chip | ChipChildren
 
 export interface VirtualOptions {
   sourceGetter: DynamicValueGetter

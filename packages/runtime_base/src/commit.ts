@@ -76,6 +76,8 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
   }
 
   if (type & RenderUpdateTypes.MOVE) {
+    let anchor: Element
+
     target = commitMoveMutation(
       container,
       parentContainer,
@@ -181,10 +183,16 @@ export function commitMoveMutation(
   parentContainer: Element,
   anchor: Element
 ) {
-  if (target && parentContainer && anchor) {
+  if (target && parentContainer) {
     const clone: Element = domOptions.cloneNode(target)
     domOptions.remove(target, parentContainer)
-    domOptions.insert(clone, parentContainer, anchor)
+    if (anchor) {
+      // 有锚点往锚点前插入
+      domOptions.insert(clone, parentContainer, anchor)
+    } else {
+      // 无锚点将目标节点插入到序列的末尾
+      domOptions.appendChild(clone, parentContainer)
+    }
 
     return target
   } else {

@@ -73,7 +73,7 @@ export interface RenderPayloadNode {
   tag?: string
   props?: Record<string | number | symbol, any>
   context: Chip // 当前 render payload 所属 chip 上下文
-  auxiliaryContext?: Chip // 辅助 chip 上下文
+  auxiliaryContext?: Chip // 辅助 chip 上下文，通常是当前 chip 上下文的父节点或下一相邻兄弟节点
   callback?: Function // render payload commit 之后要执行的回调
 
   // pointers
@@ -1092,22 +1092,24 @@ export function initIterableChip(chip: Chip, chipRoot: ChipRoot): Chip {
 export function initReconcileForElement(chip: Chip, chipRoot: ChipRoot): void {
   if (!chip.wormhole) {
     // 生成对应的 dom 容器创建 render payload
-    const payload = createRenderPayloadNode(
-      null,
-      null,
-      null,
-      RenderUpdateTypes.CREATE_ELEMENT,
-      chip,
-      null,
-      (chip.tag as string),
-      null,
-      (context: Chip, elm: Element) => {
-        // 当前 render payload commit 之后，将创建的 dom 容器
-        // 挂载到 chip 上下文上，便于子节点挂载时能够访问到对应的父 dom 容器
-        context.elm = elm
-      }
+    cacheRenderPayload(
+      createRenderPayloadNode(
+        null,
+        null,
+        null,
+        RenderUpdateTypes.CREATE_ELEMENT,
+        chip,
+        null,
+        (chip.tag as string),
+        null,
+        (context: Chip, elm: Element) => {
+          // 当前 render payload commit 之后，将创建的 dom 容器
+          // 挂载到 chip 上下文上，便于子节点挂载时能够访问到对应的父 dom 容器
+          context.elm = elm
+        }
+      ),
+      chipRoot
     )
-    cacheRenderPayload(payload, chipRoot)
   }
 }
 
@@ -1363,50 +1365,59 @@ export function reconcileToGenRenderPayload(
 ): RenderPayloadNode | RenderPayloadNode[] {
   const { tag, props, wormhole } = chip
   let payload: RenderPayloadNode | RenderPayloadNode[]
-  const onPropPatched = (elm: Element, ) => {
-
-  }
   if (wormhole) {
     // 有匹配的旧节点，且新旧 chip 节点一定是相似节点
-    const propsToPatch: object = reconcileProps(chip, wormhole, chipRoot)
-    payload = createRenderPayloadNode(
-      wormhole.elm, // 此时新 chip 还未 commit 到 dom，因此获取不到实际的 element 元素
-      null,
-      null,
-      RenderUpdateTypes.PATCH_PROP,
-      chip,
-      null,
-      (tag as string),
-      propsToPatch,
-      onPropPatched
-    )
-    cacheRenderPayload(payload, chipRoot)
+    cacheRenderPayload([
+      // 更新节点属性
+      createRenderPayloadNode(
+        wormhole.elm, // 此时新 chip 还未 commit 到 dom，因此获取不到实际的 element 元素
+        null,
+        null,
+        RenderUpdateTypes.PATCH_PROP,
+        chip,
+        null,
+        (tag as string),
+        reconcileProps(chip, wormhole, chipRoot)
+      ),
+      // 将需要移动的节点移动到指定位置
+      ...chip.move ?
+        [createRenderPayloadNode(
+          wormhole.elm,
+          null,
+          null,
+          RenderUpdateTypes.MOVE,
+          chip,
+          auxiliaryChip
+        )] :
+        []
+    ], chipRoot)
   } else {
     // 无匹配到的旧 chip 节点，新 chip 为待挂载节点。由于 dive 阶段
     // 已创建生成 dom 容器的 render payload，因此 bubble 阶段需要
     // 完成节点属性的 patch 、节点的挂载，这样才能完整将新的节点挂载
     // 到 dom 上
-    const patchPropsPayload = createRenderPayloadNode(
-      null,
-      null,
-      null,
-      RenderUpdateTypes.PATCH_PROP,
-      chip,
-      null,
-      (tag as string),
-      props,
-      onPropPatched
-    )
-    const mountPayload = createRenderPayloadNode(
-      null,
-      null,
-      null,
-      RenderUpdateTypes.MOUNT,
-      chip,
-      auxiliaryChip
-    )
-    payload = [patchPropsPayload, mountPayload]
-    cacheRenderPayload(payload, chipRoot)
+    cacheRenderPayload([
+      // 更新节点属性
+      createRenderPayloadNode(
+        null,
+        null,
+        null,
+        RenderUpdateTypes.PATCH_PROP,
+        chip,
+        null,
+        (tag as string),
+        props
+      ),
+      // 将节点挂载到指定位置
+      createRenderPayloadNode(
+        null,
+        null,
+        null,
+        RenderUpdateTypes.MOUNT,
+        chip,
+        auxiliaryChip
+      )
+    ], chipRoot)
   }
   
   return payload

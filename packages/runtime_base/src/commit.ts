@@ -60,10 +60,13 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
   }
 
   if (type & RenderUpdateTypes.MOUNT) {
+    const parent: Chip = context.parent
     target = commitMountMutation(
-      container || context.elm,
-      parentContainer || context.parent.elm,
-      anchorContainer || auxiliaryContext.elm
+      context.elm,
+      parent.elm || parent.wormhole.elm,
+      auxiliaryContext !== parent ?
+        auxiliaryContext.elm :
+        null
     )
   }
 

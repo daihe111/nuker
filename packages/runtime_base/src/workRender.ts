@@ -1377,7 +1377,11 @@ export function reconcileToGenRenderPayload(
         chip,
         null,
         (tag as string),
-        reconcileProps(chip, wormhole, chipRoot)
+        reconcileProps(chip, wormhole, chipRoot),
+        (context: Chip, elm: Element) => {
+          // render payload 执行完毕后触发，为当前 chip 上下文挂载对应的 dom 节点
+          context.elm = elm
+        }
       ),
       // 将需要移动的节点移动到指定位置
       ...chip.move ?

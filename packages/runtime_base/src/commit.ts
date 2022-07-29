@@ -1,6 +1,6 @@
 import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
-import { Chip, ChipRoot } from "./chip";
+import { Chip, ChipRoot, isLastChildOfChip } from "./chip";
 import { performIdleWork } from "./idle";
 import { isFunction } from "../../share/src";
 
@@ -37,23 +37,19 @@ export function performCommitWork(chipRoot: ChipRoot): null {
  * 将渲染描述载荷提交到真正的 dom 上
  * @param renderPayload 
  */
-export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
-  const {
-    type,
-    tag,
-    props,
-    container,
-    parentContainer,
-    anchorContainer,
-    context,
-    auxiliaryContext,
-    callback
-  } = renderPayload
-  let target: Element
-
+export function commitRenderPayload({
+  type,
+  tag,
+  props,
+  container,
+  parentContainer,
+  anchorContainer,
+  context,
+  callback
+}: RenderPayloadNode): void {
   if (type & RenderUpdateTypes.PATCH_PROP) {
     // commit 属性到 dom
-    target = commitProps(
+    commitProps(
       container || context.elm,
       props
     )
@@ -61,39 +57,40 @@ export function commitRenderPayload(renderPayload: RenderPayloadNode): void {
 
   if (type & RenderUpdateTypes.MOUNT) {
     const parent: Chip = context.parent
-    target = commitMountMutation(
+    commitMountMutation(
       context.elm,
       parent.elm || parent.wormhole.elm,
-      auxiliaryContext !== parent ?
+      // TODO 锚点获取逻辑待优化
+      !isLastChildOfChip(context) ?
         auxiliaryContext.elm :
         null
     )
   }
 
   if (type & RenderUpdateTypes.UNMOUNT) {
-    target = commitUnmountMutation(
+    commitUnmountMutation(
       container,
-      parentContainer,
-      context
+      parentContainer
     )
   }
 
   if (type & RenderUpdateTypes.MOVE) {
-    let anchor: Element
-
-    target = commitMoveMutation(
+    commitMoveMutation(
       container,
-      parentContainer,
-      anchorContainer
+      context.parent.wormhole.elm,
+      // TODO 锚点获取逻辑待优化
+      !isLastChildOfChip(context) ?
+        :
+        null
     )
   }
 
   if (type & RenderUpdateTypes.CREATE_ELEMENT) {
-    target = commitNewElement(tag)
+    commitNewElement(tag)
   }
 
   if (isFunction(callback)) {
-    callback(context, target)
+    callback(context, container)
   }
 }
 
@@ -164,8 +161,7 @@ export function commitMountMutation(
  */
 export function commitUnmountMutation(
   target: Element,
-  parentContainer: Element,
-  context: Chip
+  parentContainer: Element
 ): Element {
   if (parentContainer && target) {
     domOptions.remove(target, parentContainer)

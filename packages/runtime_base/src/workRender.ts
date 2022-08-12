@@ -56,9 +56,14 @@ export const enum RenderFlags {
   IS_RENDER_PAYLOAD = '__n_isRenderPayload'
 }
 
+// chip 遍历指针
+export interface ChipTraversePointer {
+  next: Chip // 下一个要遍历的 chip
+  phase: boolean // 遍历下一 chip 时对应的遍历阶段
+}
+
 export interface NukerRenderOptions {
   renderMode: number
-  mutableHookStrategy: number
 }
 
 export interface RenderPayloadNode {
@@ -77,12 +82,6 @@ export interface RenderPayloadNode {
 
   // pointers
   next: RenderPayloadNode | null
-}
-
-// 框架挂载模式
-export const enum MountModes {
-  SYNCHRONOUS = 0, // 同步挂载模式
-  CONCURRENT = 1 // 异步并发挂载模式
 }
 
 export const enum RenderUpdateTypes {
@@ -119,7 +118,7 @@ export const enum NukerRenderModes {
 
 export let currentRenderingInstance: ComponentInstance | VirtualInstance = null // 当前正在执行渲染工作的组件 instance
 export let renderMode: number = NukerRenderModes.TIME_SPLICING // 框架的渲染模式
-let mutableHookStrategy: number // UI 变化后生命周期的触发策略
+const ancestors: Chip[] = [] // 祖先节点栈
 
 /**
  * nuker 框架渲染总入口方法
@@ -130,10 +129,9 @@ let mutableHookStrategy: number // UI 变化后生命周期的触发策略
 export function render(
   appContent: AppContent,
   container: Element | string,
-  { renderMode: rm, mutableHookStrategy: mhs }: NukerRenderOptions
+  { renderMode: rm }: NukerRenderOptions
 ): Element {
   renderMode = isNumber(rm) ? rm : NukerRenderModes.TIME_SPLICING
-  mutableHookStrategy = isNumber(mhs) ? mhs : HookInvokingStrategies.ON_IDLE
   const chip: Chip = createChip(appContent)
   const chipRoot: ChipRoot = createChipRoot(chip)
   if (renderMode === NukerRenderModes.BATCH_SYNC) {
@@ -156,7 +154,7 @@ export function render(
   }
 
   // 执行离屏渲染，渲染完成后将内存中的根节点挂载到指定的 dom 容器中
-  const root: Element = performRenderSync(chipRoot, chip)
+  const root: Element = performRender(chipRoot, chip)
   container = isString(container) ? domOptions.getElementById(container) : container
   if (container) {
     domOptions.appendChild(root, container)
@@ -192,101 +190,58 @@ export function render(
  * @param chipRoot 
  * @param chip 
  */
-export function performRenderSync(chipRoot: ChipRoot, chip: Chip): Element {
-  let rootContainer: Element
-  let ongoingChip: Chip = chip
-  while (ongoingChip !== null) {
-    ongoingChip = performChipWork(chipRoot, ongoingChip, MountModes.SYNCHRONOUS)
-
-    if (ongoingChip === null) {
-      // 表示 chip 树已回溯至根节点，整颗 chip 树已完成离屏渲染
-      rootContainer = chipRoot.root.elm
-    }
+export function performRender(chipRoot: ChipRoot, chip: Chip): Element {
+  let pointer: ChipTraversePointer = {
+    next: chip,
+    phase: false
+  }
+  while (pointer) {
+    pointer = performChipWork(chipRoot, pointer.next, pointer.phase)
   }
 
   // 批量执行当前渲染周期内缓存的所有 mounted 生命周期
   invokeLifecycle(LifecycleHooks.MOUNTED, chipRoot)
   chipRoot[LifecycleHooks.MOUNTED] = null
 
-  return rootContainer
+  // chip 树已回溯至根节点，整颗 chip 树已完成离屏渲染，返回 chip 树对应的 dom 根节点
+  return chipRoot.root.elm
 }
 
 /**
- * 以异步可调度的方式执行渲染任务
- * @param chipRoot 
- * @param chip 
- */
-export function performRenderConcurrent(chipRoot: ChipRoot, chip: Chip): void {
-  registerOngoingChipWork(chipRoot, chip)
-}
-
-/**
- * 将 chip 节点树渲染任务注册进调度系统
- * @param chipRoot 
- * @param chip 
- */
-export function registerOngoingChipWork(chipRoot: ChipRoot, chip: Chip): void {
-  function chipPerformingJob(chipRoot: ChipRoot, chip: Chip): Function {
-    // get next chip to working
-    const next = performChipWork(chipRoot, chip, MountModes.CONCURRENT)
-    if (next && next[ChipFlags.IS_CHIP]) {
-      return chipPerformingJob.bind(null, chipRoot, next)
-    } else {
-      return null
-    }
-  }
-
-  registerJob(chipPerformingJob.bind(null, chipRoot, chip))
-}
-
-/**
- * chip unit work 执行
+ * 处理当前遍历 chip 节点
  * callback 会回传当前 chip 节点挂载后的 dom 容器
  * @param chipRoot 
  * @param chip 
- * @param mode 
+ * @param phase
  * @param callback 
  */
 export function performChipWork(
   chipRoot: ChipRoot,
   chip: Chip,
-  mode: number,
+  phase: boolean = false,
   callback?: (chip: Chip) => void
-): Chip {
-  if (chip === null) {
-    return null
-  }
-
-  if (chip.phase === ChipPhases.PENDING) {
-    // 首次遍历处理当前 chip 节点
-    initRenderWorkForChip(chip, chipRoot)
-    chip.phase = ChipPhases.INITIALIZE
-
-    // 对于包含动态子节点执行器 render 的 chip，如虚拟容器类型、
-    // 组件类型的 chip 节点，init 阶段已经建立了父子关系，因此
-    // lastChild 已经有有效 chip 节点
-    let lastChild = chip.lastChild
-    if (!lastChild) {
-      // 无子节点链接，建立父子节点之间的链接
-      const children: ChipChildren = chip.children
-      const lastChipChild = getLastChipChild(children)
-      let next: Chip
-      if (lastChipChild) {
-        chip.lastChild = lastChild = lastChipChild
-        lastChild.parent = chip
-        chip.currentChildIndex = isArray(children) ? (children.length - 1) : 0
-        next = lastChild
-      } else {
-        next = completeChip(chipRoot, chip, mode, callback)
+): ChipTraversePointer {
+  if (phase) {
+    // 回溯遍历阶段
+    return completeChip(chipRoot, chip, callback)
+  } else {
+    // 深度遍历阶段
+    let lastChild: Chip
+    let lastIndex: number
+    const children: ChipChildren = chip.children
+    if (children && (lastChild = children[lastIndex = children.length - 1])) {
+      // 存在更深层级的子节点需优先处理，当前节点只做预处理工作
+      initRenderWorkForChip(chip, chipRoot)
+      // 记录下一节点在子节点序列中的索引位置
+      lastChild.position = lastIndex
+      return {
+        next: lastChild,
+        phase: false
       }
-
-      return next
     } else {
-      return lastChild
+      // 无更深层级的子节点，处理当前节点的渲染工作
+      return completeChip(chipRoot, chip, callback)
     }
-  } else if (chip.phase === ChipPhases.INITIALIZE) {
-    // 该节点在 dive | swim 阶段已经遍历过，此时为祖先节点回溯阶段
-    return completeChip(chipRoot, chip, mode, callback)
   }
 }
 
@@ -296,6 +251,9 @@ export function performChipWork(
  * @param chipRoot 
  */
 export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot): void {
+  // 祖先节点入栈
+  ancestors.push(chip)
+
   switch (chip.chipType) {
     // 原生节点
     case ChipTypes.NATIVE_DOM:
@@ -317,66 +275,43 @@ export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot): void {
 }
 
 /**
- * chip 是 leaf node，完成对该节点的所有处理工作，并标记为 complete
+ * chip 是叶子节点或者回溯阶段的节点，完成该节点的全部渲染工作
  * 返回下一个要处理的 chip 节点
  * 同级兄弟节点的处理顺序为从尾到头，以保证靠近尾部的节点优先渲染，渲染
- * 靠近头部的节点时可以获取到后面节点的 dom 作为插入锚点
+ * 靠近头部的节点时可以获取到后面节点的 dom 作为锚点
  * @param chipRoot 
  * @param chip 
- * @param mode 
  * @param callback 
  */
 export function completeChip(
   chipRoot: ChipRoot,
   chip: Chip,
-  mode: number,
   callback?: (chip: Chip) => void
-): Chip {
-  chip.phase = ChipPhases.COMPLETE
-  dispatchMutableEffects(chipRoot, chip, mode)
-
-  // 计算下一个要处理的节点
-  let sibling = chip.prevSibling
-  if (sibling === null) {
-    // finish dive and start swim to handle sibling node
-    const parent = chip.parent
-    const children: ChipChildren = parent?.children
-    if (isArray(children)) {
-      sibling = children[--parent.currentChildIndex]
-    }
-  }
+): ChipTraversePointer {
+  completeRenderWork(chipRoot, chip)
 
   if (isFunction(callback)) {
     callback(chip)
   }
 
-  if (sibling) {
-    // 当前 chip 有有效的兄弟节点
-    chip.prevSibling = sibling
-    sibling.parent = chip.parent
-    return sibling
-  } else {
-    return chip.parent
-  }
-}
+  ancestors.pop();
 
-/**
- * 根据 chip 节点中纯数据层面信息派发对应的视图渲染行为
- * @param chipRoot 
- * @param chip 
- * @param mode 
- */
-export function dispatchMutableEffects(chipRoot: ChipRoot, chip: Chip, mode: number): void {
-  switch (mode) {
-    case MountModes.SYNCHRONOUS:
-      completeRenderWorkForChipSync(chipRoot, chip)
-      break
-    case MountModes.CONCURRENT:
-      completeRenderWorkForChipConcurrent(chipRoot, chip)
-      break
-    default:
-      // an nuker bug maybe has occurred
-      break
+  // 计算下一个需要处理的节点
+  if (chip.position === 0) {
+    // 同级子节点已全部处理完毕，准备向父级回溯
+    return {
+      next: ancestors[ancestors.length - 1],
+      phase: true
+    }
+  } else {
+    // 存在同级兄弟节点，继续深度遍历此兄弟节点
+    const prevPosition: number = chip.position - 1
+    const prevChip: Chip = ancestors[ancestors.length - 1].children[prevPosition]
+    prevChip.position = prevPosition
+    return {
+      next: prevChip,
+      phase: false
+    }
   }
 }
 
@@ -398,41 +333,59 @@ export function initRenderWorkForComponent(chip: Chip): void {
   invokeLifecycle(LifecycleHooks.WILL_MOUNT, instance)
 }
 
-// 初始化 nuker 内置 component 类型节点的渲染工作
+/**
+ * 初始化 nuker 内置 component 类型节点的渲染工作
+ * @param chip 
+ */
 export function initRenderWorkForReservedComponent(chip: Chip): void {
 
 }
 
-// 初始化 element 类型节点的渲染工作: dom 容器创建
+/**
+ * 初始化 element 类型节点的渲染工作: dom 容器创建
+ * @param chip 
+ */
 export function initRenderWorkForElement(chip: Chip): void {
   const { tag, isSVG, is } = chip
   chip.elm = domOptions.createElement(tag, isSVG, is)
 }
 
-// 初始化条件类型节点的渲染工作
-// if-chip: 数据变化时触发整个 render 重新执行
-// (source, sourceKey) => {
-//   return source[sourceKey[0]] === 1 ? <A /> : (source[sourceKey[1]] === 2 ? <B /> : <C />)
-// }
+/**
+ * 初始化条件类型节点的渲染工作
+ * if-chip: 数据变化时触发整个 render 重新执行
+ * (source, sourceKey) => {
+ *   return source[sourceKey[0]] === 1 ? <A /> : (source[sourceKey[1]] === 2 ? <B /> : <C />)
+ * }
+ * @param chip 
+ * @param chipRoot 
+ */
 export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): void {
   initConditionChip(chip, chipRoot)
 }
 
-// 初始化可遍历类型节点的渲染工作
-// for-chip: 每个单元节点均对应一个单元渲染器 render，并且是深度收集
-// case 1: iterable source 直接全量被替换，重新执行 render 生成新的
-//   全新节点片段，并与旧的节点片段做 reconcile
-// case 2: iterable source 本身引用不变，对一级子元素做改变，只需要对
-//   一级元素改变的 key 对应的子 render 进行新节点生成，并对新旧节点对
-//   进行 reconcile
-// case 3: iterable source 本身引用不变，对一级以下元素做改变，此情况
-//   下发生值变化的数据所对应的 dom 结构一定是稳定的，无需特殊处理
-// for-chip 编译出的渲染器
+/**
+ * 初始化可遍历类型节点的渲染工作
+ * for-chip: 每个单元节点均对应一个单元渲染器 render，并且是深度收集
+ * case 1: iterable source 直接全量被替换，重新执行 render 生成新的
+ *   全新节点片段，并与旧的节点片段做 reconcile
+ * case 2: iterable source 本身引用不变，对一级子元素做改变，只需要对
+ *   一级元素改变的 key 对应的子 render 进行新节点生成，并对新旧节点对
+ *   进行 reconcile
+ * case 3: iterable source 本身引用不变，对一级以下元素做改变，此情况
+ *   下发生值变化的数据所对应的 dom 结构一定是稳定的，无需特殊处理
+ * for-chip 编译出的渲染器
+ * @param chip 
+ * @param chipRoot 
+ */
 export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): void {
   initIterableChip(chip, chipRoot)
 }
 
-// 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
+/**
+ * 完成 element 类型节点的渲染工作: 当前节点插入父 dom 容器
+ * @param chip 
+ * @param chipRoot 
+ */
 export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): void {
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
   const parentElm: Element = getAncestorContainer(chip)
@@ -476,16 +429,11 @@ export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot): 
   mountElementForChip(chip)
 
   // 执行 mounted 生命周期，此时组件已执行完自身的渲染挂载工作
-  if (mutableHookStrategy === HookInvokingStrategies.ON_IDLE) {
-    registerLifecycleHook(
-      chipRoot,
-      LifecycleHooks.MOUNTED,
-      chip.instance[LifecycleHooks.MOUNTED]
-    )
-  } else {
-    // 组件自身渲染完成后立即执行 mounted 生命周期
-    invokeLifecycle(LifecycleHooks.MOUNTED, (chip.instance as ComponentInstance))
-  }
+  registerLifecycleHook(
+    chipRoot,
+    LifecycleHooks.MOUNTED,
+    chip.instance[LifecycleHooks.MOUNTED]
+  )
 }
 
 /**
@@ -493,7 +441,7 @@ export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot): 
  * @param chipRoot 
  * @param chip 
  */
-export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): void {
+export function completeRenderWork(chipRoot: ChipRoot, chip: Chip): void {
   switch (chip.chipType) {
     case ChipTypes.NATIVE_DOM:
       completeRenderWorkForElement(chip, chipRoot)
@@ -513,23 +461,23 @@ export function completeRenderWorkForChipSync(chipRoot: ChipRoot, chip: Chip): v
   }
 }
 
-export function completeRenderWorkForChipConcurrent(chipRoot: ChipRoot, chip: Chip): void {
-
-}
-
 /**
- * 为 chip 挂载相匹配的 dom 节点
+ * 为虚拟容器类型的 chip 挂载相匹配的 dom 节点
+ * 挂载距离当前节点最近的子代 dom 元素
  * @param chip 
  */
 export function mountElementForChip(chip: Chip): Element {
   let node: Chip = chip
-  while (true) {
+  while (node) {
     if (node?.elm) {
       return node.elm
     }
 
-    node = node.lastChild
+    const children: ChipChildren = node.children
+    node = children && children[children.length - 1]
   }
+
+  return null
 }
 
 /**

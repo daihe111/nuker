@@ -103,28 +103,18 @@ export interface Chip extends ChipCore {
   childMaySkip?: boolean // chip 的部分子代节点在 reconcile 阶段有可能被跳过，仅可迭代 fragment 会持有该属性
   selfSkipable?: true // 标记 chip 节点本身是否可跳过 reconcile
   skipable?: true // 标记 chip 节点及其子代是否全部可跳过 reconcile
-  // 当前已转化为 chip 的 Chip child 索引，用于辅助 chip 树
-  // 遍历过程中动态创建新的 chip
-  currentChildIndex?: number
   deletions?: Chip[] // 缓存当前 chip 下需要删除的一级子 chip
   // 存储节点对应的所有 effect，用于 chip 上下文销毁时对 effect 
   // 进行靶向移除
   effects?: ListAccessor<ChipEffectUnit>
   renderPayloads?: ListAccessor<RenderPayloadNode> // 用于存储新旧子节点匹配过程中产生的 render payload，如节点移动行为
+  position?: number // chip 节点在子节点序列中的索引位置
 
   // pointers
-  // chip 树中仅包含动态节点，在生成 chip 树时会将 dom 树
-  // 中存在动态内容的节点连接成一颗 chip 链表树
-  parent: Chip
-  prevSibling: ChipUnit
-  nextSibling: ChipUnit
-  firstChild?: ChipUnit
-  lastChild?: ChipUnit
   // 连接存在映射关系的新旧 chip 节点的通道指针
   wormhole: ChipUnit
 
   // flags
-  phase?: number
   compileFlags?: number
   // 标记当前 chip 节点在 commit 阶段需要触发的 effect 类型
   effectFlags?: number

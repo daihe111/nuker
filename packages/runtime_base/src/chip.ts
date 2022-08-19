@@ -159,12 +159,9 @@ export function cloneChip(chip: Chip, props: object, children: ChipChildren): Ch
     chipType: chip.chipType,
     props: extend({}, chip.props, props),
     children: children || chip.children,
-    parent: chip.parent,
     id: chip.id,
     instance: chip.instance,
     ref: chip.ref,
-    prevSibling: chip.prevSibling,
-    nextSibling: chip.nextSibling,
     wormhole: chip.wormhole,
     elm: chip.elm
   }
@@ -198,21 +195,13 @@ export function getLastChipChild(children: ChipChildren): Chip {
 }
 
 /**
- * 判断 chip 节点是否为最后一个子节点
- * @param chip 
- * @param children 
- */
-export function isLastChipChild(chip: Chip, children: ChipChildren): boolean {
-  return (getLastChipChild(children) === chip)
-}
-
-/**
  * chip 节点是否为指定 chip 的最后一个子节点
  * @param child 
  * @param parent 
  */
-export function isLastChildOfChip(child: Chip): boolean {
-  return (child.parent.lastChild === child)
+export function isLastChildOfChip(target: Chip, chip: Chip): boolean {
+  const children: ChipChildren = chip.children
+  return (children ? target === children[children.length - 1] : false)
 }
 
 export function createChipRoot(root: Chip): ChipRoot {
@@ -244,11 +233,6 @@ export function createChip(
     chipType,
     directives: [],
     components: [],
-    parent: null,
-    prevSibling: null,
-    nextSibling: null,
-    firstChild: null,
-    lastChild: null,
     wormhole: null
   }
 }

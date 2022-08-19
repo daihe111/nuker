@@ -1,4 +1,4 @@
-import { Chip } from "./chip";
+import { Chip, ChipChildren, ChipPropValue, ChipProps } from "./chip";
 import { isFunction, createEmptyObject } from "../../share/src";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { LifecycleHooks, registerLifecycleHook, LifecycleHookNames } from "./lifecycle";
@@ -13,6 +13,12 @@ export interface OptionComponent {
   // flag
   readonly type: ComponentTypes.OPTION
 
+  readonly template?: string // 渲染模板
+
+  readonly children?: ChipChildren // 渲染模板编译出的子代节点
+
+  render?: (source?: any) => ChipChildren // 动态渲染器
+
   install: (props?: object, context?: ComponentInstance) => object
 
   // lifecycle hooks
@@ -26,31 +32,34 @@ export interface OptionComponent {
 }
 
 export interface FunctionComponent {
-  (): Chip
+  (props?: ChipProps): Chip[]
   readonly type: ComponentTypes.FUNCTION
 }
 
-export default abstract class NukerComponent {
-  constructor(props: unknown[]) {
+export default class NukerComponent  {
+  constructor(props: ChipProps) {
     this.props = props
   }
 
-  public readonly type = ComponentTypes.CLASS
-  protected props?: unknown[]
+  static readonly type = ComponentTypes.CLASS
+  protected props?: ChipProps
+  protected source?: any
 
   // lifecycle hooks
-  protected abstract [LifecycleHooks.INIT]: Function
-  protected abstract [LifecycleHooks.WILL_MOUNT]: Function
-  protected abstract [LifecycleHooks.MOUNTED]: Function
-  protected abstract [LifecycleHooks.WILL_UPDATE]: Function
-  protected abstract [LifecycleHooks.UPDATED]: Function
-  protected abstract [LifecycleHooks.WILL_UNMOUNT]: Function
-  protected abstract [LifecycleHooks.UNMOUNTED]: Function
+  protected [LifecycleHooks.INIT]: Function
+  protected [LifecycleHooks.WILL_MOUNT]: Function
+  protected [LifecycleHooks.MOUNTED]: Function
+  protected [LifecycleHooks.WILL_UPDATE]: Function
+  protected [LifecycleHooks.UPDATED]: Function
+  protected [LifecycleHooks.WILL_UNMOUNT]: Function
+  protected [LifecycleHooks.UNMOUNTED]: Function
+
+  protected render: () => ChipChildren
 }
 
 export type ClassComponent<T = NukerComponent> = T extends NukerComponent ? T : NukerComponent
 
-export type Component = OptionComponent | ClassComponent | FunctionComponent
+export type Component = OptionComponent | typeof NukerComponent | FunctionComponent
 
 export interface LifecycleUnit {
   hook: Function
@@ -59,25 +68,32 @@ export interface LifecycleUnit {
 
 export type LifecycleHookList = ListAccessor<LifecycleUnit>
 
+export type ComponentRenderer = (source?: any) => ChipChildren
+
+/**
+ * 组件实例抹平了不同形式组件声明之间的数据差异，可通过实例使用相同的 API 
+ * 访问到不同形式组件上的数据
+ */
 export interface ComponentInstance {
-  chip: Chip | null
-  Component: Component
-  render: (source?: any) => Chip[]
-  refs: object[] | null
-  [key: string]: any
+  Component: Component // 组件初始配置集
+  children?: ChipChildren // 渲染模板编译生成的子代节点
+  render?: ComponentRenderer
+  refs?: object[] | null
 
   // data source
-  source: object // 组件自身数据源
-  props?: object // 组件接受的外部属性
+  source?: object // 组件自身数据源
+  props?: ChipProps // 组件外部属性
 
   // lifecycle hooks
-  [LifecycleHooks.INIT]: LifecycleHookList
-  [LifecycleHooks.WILL_MOUNT]: LifecycleHookList
-  [LifecycleHooks.MOUNTED]: LifecycleHookList
-  [LifecycleHooks.WILL_UPDATE]: LifecycleHookList
-  [LifecycleHooks.UPDATED]: LifecycleHookList
-  [LifecycleHooks.WILL_UNMOUNT]: LifecycleHookList
-  [LifecycleHooks.UNMOUNTED]: LifecycleHookList
+  [LifecycleHooks.INIT]?: LifecycleHookList
+  [LifecycleHooks.WILL_MOUNT]?: LifecycleHookList
+  [LifecycleHooks.MOUNTED]?: LifecycleHookList
+  [LifecycleHooks.WILL_UPDATE]?: LifecycleHookList
+  [LifecycleHooks.UPDATED]?: LifecycleHookList
+  [LifecycleHooks.WILL_UNMOUNT]?: LifecycleHookList
+  [LifecycleHooks.UNMOUNTED]?: LifecycleHookList
+
+  [key: string]: any
 }
 
 /**
@@ -88,40 +104,42 @@ export interface ComponentInstance {
  * @param Component 
  * @param chipContainer 
  */
-export function createComponentInstance(Component: Component, chipContainer: Chip): ComponentInstance {
-  let instance: ComponentInstance = createEmptyObject()
+export function createComponentInstance(Component: Component, chip: Chip): ComponentInstance {
+  let inst: ComponentInstance
   switch (Component.type) {
     case ComponentTypes.OPTION: {
       // option component
-      const install = Component.install
-      if (isFunction(install)) {
-        // 挂载组件数据源
-        instance.source = install()
-        initLifecycleHooks(instance, Component)
+      inst = {
+        Component,
+        children: Component.children,
+        render: Component.render,
+        source: Component.install(),
+        props: chip.props
       }
-      break
+      // 初始化生命周期
+      initLifecycleHooks(inst, Component)
+      return inst
     }
     case ComponentTypes.CLASS: {
       // class component
-      instance = new Component()
-      initLifecycleHooks(instance)
-      break
+      inst = (new Component(chip.props) as any)
+      inst.Component = Component
+      initLifecycleHooks(inst)
+      return inst
     }
     case ComponentTypes.FUNCTION: {
       // function component
-      instance.render = Component
-      break
+      inst = {
+        Component,
+        render: (Component as ComponentRenderer)
+      }
+      return inst
     }
     default: {
       // invalid Component
-      break
+      return inst
     }
   }
-
-  instance.Component = Component
-  instance.chip = chipContainer
-
-  return instance
 }
 
 /**
@@ -137,6 +155,18 @@ export function initLifecycleHooks(instance: ComponentInstance, source?: object)
   }
 }
 
-export function reuseComponentInstance(instance: ComponentInstance, chipContainer: Chip): ComponentInstance {
-
+/**
+ * 为组件 chip 创建并挂载子代节点
+ * @param chip 
+ */
+export function mountComponentChildren(chip: Chip): void {
+  const instance = (chip.instance as ComponentInstance)
+  if (instance.children) {
+    chip.children = instance.children
+  } else if (isFunction(instance.render)) {
+    const { render, source } = instance
+    chip.children = render(source)
+  } else {
+    // do nothing
+  }
 }

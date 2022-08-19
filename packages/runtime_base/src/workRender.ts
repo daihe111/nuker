@@ -22,7 +22,7 @@ import {
   registerJob,
   initScheduler
 } from "./scheduler";
-import { ComponentInstance, Component, createComponentInstance } from "./component";
+import { ComponentInstance, Component, createComponentInstance, mountComponentChildren } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
@@ -1057,20 +1057,20 @@ export function initReconcileForElement(chip: Chip, chipRoot: ChipRoot): void {
  * @param chipRoot 
  */
 export function initReconcileForComponent(chip: Chip, chipRoot: ChipRoot): void {
-  const { source, render } = chip.instance = createComponentInstance((chip.tag as Component), chip)
+  chip.instance = chip.wormhole?.instance && createComponentInstance((chip.tag as Component), chip)
   disableCollecting()
-  chip.children = render(source)
+  mountComponentChildren(chip)
   enableCollecting()
 
-  if (!chip.wormhole) {
+  if (chip.wormhole) {
+    // 组件节点存在配对的相似节点，说明组件会做更新，因此触发 willMount 生命周期
+    invokeLifecycle(LifecycleHooks.WILL_UPDATE, chip.instance)
+  } else {
     // 无对应旧 chip 节点，表示当前 chip 为待挂载节点
     // 触发 init 生命周期
     invokeLifecycle(LifecycleHooks.INIT, chip.instance)
     // 触发 willMount 生命周期
     invokeLifecycle(LifecycleHooks.WILL_MOUNT, chip.instance)
-  } else {
-    // 组件节点存在配对的相似节点，说明组件会做更新，因此触发 willMount 生命周期
-    invokeLifecycle(LifecycleHooks.WILL_UPDATE, chip.instance)
   }
 }
 

@@ -134,13 +134,22 @@ export function render(
   renderMode = isNumber(rm) ? rm : NukerRenderModes.TIME_SPLICING
   const chip: Chip = createChip(appContent)
   const chipRoot: ChipRoot = createChipRoot(chip)
+
+  // 执行离屏渲染，渲染完成后将内存中的根节点挂载到指定的 dom 容器中
+  const root: Element = performRender(chipRoot, chip)
+  container = isString(container) ? domOptions.getElementById(container) : container
+  if (container) {
+    domOptions.appendChild(root, container)
+  }
+
+  // 首次挂载视图结束，执行框架初始化逻辑
   if (renderMode === NukerRenderModes.BATCH_SYNC) {
     initRenderEffectBuffer({
       onFlushed: () => {
         performCommitWork(chipRoot)
         performIdleWork(chipRoot)
       }
-  })
+    })
   } else {
     initScheduler({
       ...rm === NukerRenderModes.CONCURRENT ? {
@@ -151,13 +160,6 @@ export function render(
         onConvergentJobsFinished: performIdleWork.bind(null, chipRoot)
       } : {}
     })
-  }
-
-  // 执行离屏渲染，渲染完成后将内存中的根节点挂载到指定的 dom 容器中
-  const root: Element = performRender(chipRoot, chip)
-  container = isString(container) ? domOptions.getElementById(container) : container
-  if (container) {
-    domOptions.appendChild(root, container)
   }
 
   return container
@@ -226,22 +228,38 @@ export function performChipWork(
     return completeChip(chipRoot, chip, callback)
   } else {
     // 深度遍历阶段
-    let lastChild: Chip
-    let lastIndex: number
-    const children: ChipChildren = chip.children
-    if (children && (lastChild = children[lastIndex = children.length - 1])) {
-      // 存在更深层级的子节点需优先处理，当前节点只做预处理工作
-      initRenderWorkForChip(chip, chipRoot)
-      // 记录下一节点在子节点序列中的索引位置
-      lastChild.position = lastIndex
-      return {
-        next: lastChild,
-        phase: false
+    const initRenderMap = {
+      // 原生节点
+      [ChipTypes.NATIVE_DOM]: {
+        getChildren: (chip: Chip) => (chip.children),
+        initRenderCallback: initRenderWorkForElement
+      },
+      // 非原生节点，附带虚拟容器的节点: component / virtual chip
+      [ChipTypes.CUSTOM_COMPONENT]: {
+        getChildren: (chip: Chip) => (chip.children),
+        initRenderCallback: initRenderWorkForComponent
+      },
+      [ChipTypes.RESERVED_COMPONENT]: {
+        getChildren: (chip: Chip) => (chip.children),
+        initRenderCallback: initRenderWorkForReservedComponent
+      },
+      [ChipTypes.CONDITION]: {
+        getChildren: (chip: Chip) => (chip.children),
+        initRenderCallback: initRenderWorkForConditionChip
+      },
+      [ChipTypes.FRAGMENT]: {
+        getChildren: (chip: Chip) => (chip.children),
+        initRenderCallback: initRenderWorkForIterableChip
       }
-    } else {
-      // 无更深层级的子节点，处理当前节点的渲染工作
-      return completeChip(chipRoot, chip, callback)
     }
+    const { getChildren, initRenderCallback } = initRenderMap[chip.chipType]
+    return initRenderWorkForChip(
+      chip,
+      chipRoot,
+      getChildren,
+      initRenderCallback,
+      callback
+    )
   }
 }
 
@@ -250,27 +268,31 @@ export function performChipWork(
  * @param chip 
  * @param chipRoot 
  */
-export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot): void {
+export function initRenderWorkForChip(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  getChildren: (chip: Chip) => ChipChildren,
+  initRenderCallback: (chip: Chip, chipRoot: ChipRoot) => void,
+  onCompleted: (chip: Chip) => void
+): ChipTraversePointer {
   // 祖先节点入栈
   ancestors.push(chip)
 
-  switch (chip.chipType) {
-    // 原生节点
-    case ChipTypes.NATIVE_DOM:
-      initRenderWorkForElement(chip)
-      break
-    // 非原生节点，附带虚拟容器的节点: component / virtual chip
-    case ChipTypes.CUSTOM_COMPONENT:
-      initRenderWorkForComponent(chip)
-      break
-    case ChipTypes.RESERVED_COMPONENT:
-      initRenderWorkForReservedComponent(chip)
-      break
-    case ChipTypes.CONDITION:
-      initRenderWorkForConditionChip(chip, chipRoot)
-    case ChipTypes.FRAGMENT:
-      initRenderWorkForIterableChip(chip, chipRoot)
-      break
+  let lastChild: Chip
+  let lastIndex: number
+  const children: ChipChildren = getChildren(chip)
+  if (children && (lastChild = children[lastIndex = children.length - 1])) {
+    // 存在更深层级的子节点需优先处理，当前节点只做预处理工作
+    initRenderCallback(chip, chipRoot)
+    // 记录下一节点在子节点序列中的索引位置
+    lastChild.position = lastIndex
+    return {
+      next: lastChild,
+      phase: false
+    }
+  } else {
+    // 无更深层级的子节点，处理当前节点的渲染工作
+    return completeChip(chipRoot, chip, onCompleted)
   }
 }
 

@@ -17,16 +17,16 @@ import {
   isSameChip,
   ChipKey
 } from "./chip";
-import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ, deleteProperty, hasOwn } from "../../share/src";
+import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ, deleteProperty, hasOwn, NOOP } from "../../share/src";
 import {
   registerJob,
   initScheduler
 } from "./scheduler";
-import { ComponentInstance, Component, createComponentInstance, mountComponentChildren } from "./component";
+import { ComponentInstance, Component, createComponentInstance, mountComponentChildren, getComponentChildren } from "./component";
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
-import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
+import { createVirtualChipInstance, VirtualInstance, VirtualChipRender, getVirtualChildren } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, initRenderEffectBuffer } from "./renderEffectBuffer";
 import {
@@ -114,6 +114,49 @@ export const enum NukerRenderModes {
   TIME_SPLICING = 1,
   // 并发渲染模式，根据每个渲染副作用的优先级进行调度，决定渲染任务执行的时机、顺序、行为
   CONCURRENT = 2
+}
+
+export const renderInstrumentations = {
+  // 原生节点
+  [ChipTypes.NATIVE_DOM]: {
+    getChildren: (chip: Chip) => (chip.children),
+    onInitRender: initRenderWorkForElement,
+    onCompleteRender: completeRenderWorkForElement,
+    onInitReconcile: initReconcileForElement,
+    onCompleteReconcile: NOOP
+  },
+  // 自定义组件
+  [ChipTypes.CUSTOM_COMPONENT]: {
+    getChildren: getComponentChildren,
+    onInitRender: initRenderWorkForComponent,
+    onCompleteRender: completeRenderWorkForComponent,
+    onInitReconcile: initReconcileForComponent,
+    onCompleteReconcile: completeReconcileForComponent
+  },
+  // 内部组件
+  [ChipTypes.RESERVED_COMPONENT]: {
+    getChildren: getComponentChildren,
+    onInitRender: initRenderWorkForComponent,
+    onCompleteRender: completeRenderWorkForComponent,
+    onInitReconcile: initReconcileForComponent,
+    onCompleteReconcile: completeReconcileForComponent
+  },
+  // 条件虚拟容器节点
+  [ChipTypes.CONDITION]: {
+    getChildren: getVirtualChildren,
+    onInitRender: initRenderWorkForConditionChip,
+    onCompleteRender: completeRenderWorkForConditionChip,
+    onInitReconcile: initConditionChip,
+    onCompleteReconcile: NOOP
+  },
+  // 可迭代虚拟容器节点
+  [ChipTypes.FRAGMENT]: {
+    getChildren: getVirtualChildren,
+    onInitRender: initRenderWorkForIterableChip,
+    onCompleteRender: completeRenderWorkForIterableChip,
+    onInitReconcile: initIterableChip,
+    onCompleteReconcile: NOOP
+  }
 }
 
 export let currentRenderingInstance: ComponentInstance | VirtualInstance = null // 当前正在执行渲染工作的组件 instance
@@ -228,36 +271,12 @@ export function performChipWork(
     return completeChip(chipRoot, chip, callback)
   } else {
     // 深度遍历阶段
-    const initRenderMap = {
-      // 原生节点
-      [ChipTypes.NATIVE_DOM]: {
-        getChildren: (chip: Chip) => (chip.children),
-        initRenderCallback: initRenderWorkForElement
-      },
-      // 非原生节点，附带虚拟容器的节点: component / virtual chip
-      [ChipTypes.CUSTOM_COMPONENT]: {
-        getChildren: (chip: Chip) => (chip.children),
-        initRenderCallback: initRenderWorkForComponent
-      },
-      [ChipTypes.RESERVED_COMPONENT]: {
-        getChildren: (chip: Chip) => (chip.children),
-        initRenderCallback: initRenderWorkForReservedComponent
-      },
-      [ChipTypes.CONDITION]: {
-        getChildren: (chip: Chip) => (chip.children),
-        initRenderCallback: initRenderWorkForConditionChip
-      },
-      [ChipTypes.FRAGMENT]: {
-        getChildren: (chip: Chip) => (chip.children),
-        initRenderCallback: initRenderWorkForIterableChip
-      }
-    }
-    const { getChildren, initRenderCallback } = initRenderMap[chip.chipType]
+    const { getChildren, onInitRender } = renderInstrumentations[chip.chipType]
     return initRenderWorkForChip(
       chip,
       chipRoot,
       getChildren,
-      initRenderCallback,
+      onInitRender,
       callback
     )
   }
@@ -272,7 +291,7 @@ export function initRenderWorkForChip(
   chip: Chip,
   chipRoot: ChipRoot,
   getChildren: (chip: Chip) => ChipChildren,
-  initRenderCallback: (chip: Chip, chipRoot: ChipRoot) => void,
+  onInitRender: (chip: Chip, chipRoot: ChipRoot) => void,
   onCompleted: (chip: Chip) => void
 ): ChipTraversePointer {
   // 祖先节点入栈
@@ -283,7 +302,7 @@ export function initRenderWorkForChip(
   const children: ChipChildren = getChildren(chip)
   if (children && (lastChild = children[lastIndex = children.length - 1])) {
     // 存在更深层级的子节点需优先处理，当前节点只做预处理工作
-    initRenderCallback(chip, chipRoot)
+    onInitRender(chip, chipRoot)
     // 记录下一节点在子节点序列中的索引位置
     lastChild.position = lastIndex
     return {

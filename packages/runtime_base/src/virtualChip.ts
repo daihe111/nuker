@@ -1,6 +1,6 @@
 import { Chip, ChipChildren, DynamicValueGetter, ChipTypes } from "./chip";
 
-export type VirtualChipRender = (source?: any, sourceKey?: any) => Chip | ChipChildren
+export type VirtualChipRender = (source?: any, sourceKey?: any) => ChipChildren
 
 export interface VirtualOptions {
   sourceGetter: DynamicValueGetter
@@ -31,10 +31,9 @@ export function createVirtualChipInstance(chip: Chip): VirtualInstance {
 }
 
 /**
- * 校验 chip 节点是否为虚拟容器节点的根节点
+ * 获取虚拟容器节点的子代节点
  * @param chip 
  */
-export function isRootOfVirtualChip(chip: Chip): boolean {
-  const parent: Chip = chip.parent
-  return (parent.chipType === ChipTypes.FRAGMENT || parent.chipType === ChipTypes.CONDITION)
+export function getVirtualChildren(chip: Chip): ChipChildren  {
+  return (chip.instance as VirtualInstance).render()
 }

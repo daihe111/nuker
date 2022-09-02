@@ -170,3 +170,16 @@ export function mountComponentChildren(chip: Chip): void {
     // do nothing
   }
 }
+
+/**
+ * 获取组件的子代节点
+ * @param chip 
+ */
+export function getComponentChildren(chip: Chip): ChipChildren {
+  const { children, render, source } = chip.instance
+  return children ?
+    children :
+    (render ?
+      render(source) :
+      null)
+}

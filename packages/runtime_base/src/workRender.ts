@@ -764,7 +764,17 @@ export function cacheEffectToChip(effect: Effect, chip: Chip): Effect {
   return effect
 }
 
-// 创建渲染信息描述 payload
+/**
+ * 创建 dom 渲染描述
+ * @param container 
+ * @param parentContainer 
+ * @param anchorContainer 
+ * @param type 
+ * @param context 
+ * @param tag 
+ * @param props 
+ * @param callback 
+ */
 export function createRenderPayloadNode(
   container: Element,
   parentContainer: Element,
@@ -790,63 +800,85 @@ export function createRenderPayloadNode(
 }
 
 /**
- * 需要进行 reconcile 进行 concurrent 渲染，生成 render payload，
- * 而不直接操作 dom 更新视图
+ * 创建 reconcile 任务，将新旧 chip 树的 reconcile 按节点维度拆分为嵌套
+ * 的子任务，每一对节点的 reconcile 都会作为一个子任务
  * @param chip 
  * @param chipRoot 
  * @param renderData 
- * @param needCommit
  */
 export function genReconcileJob(
   chip: Chip,
   chipRoot: ChipRoot,
-  renderData: DynamicRenderData
+  { children }: DynamicRenderData
 ): Function {
-  // renderData 是最新的渲染数据
-  const { children } = renderData
-  if (children) {
-    // 存在动态子代节点，触发新旧子代节点的 diff 流程，并生产对应的 render payload
-    const newChip = cloneChip(chip, EMPTY_OBJ, children)
-    newChip.wormhole = chip
-    // trigger reconcile diff
-    const ancestorChip: Chip = newChip
-    const reconcileJob = (chip: Chip, lastChip: Chip): Function => {
-      // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
-      if (chip === ancestorChip) {
-        // 处理起始 chip 节点
-        if (chip.phase === ChipPhases.PENDING) {
-          if (renderMode === NukerRenderModes.CONCURRENT) {
-            // 如果是 concurrent 渲染模式，任务可能被打断并中途插入新的任务，
-            // 为保证任务重新开始后访问相对应的状态缓存，需要在 concurrent 任
-            // 重新开始时卸载已失效的状态缓存，比如执行到半途但被其他任务插入，
-            // 当该任务重新开始时由于要完全从头执行，因此将任务被打断前积累的
-            // 失效状态缓存作为垃圾信息清理掉
-            teardownChipCache(chipRoot)
-          }
-
-          const pointer: Chip = getPointerChip(chip.wormhole)
-          cacheIdleJob(
-            replaceChipContext.bind(null, chip, chip.wormhole, pointer),
-            chipRoot
-          )
-
-          // 返回处理下一组 chip 节点的子任务
-          const next: Chip = reconcile(chip, chipRoot)
-          return reconcileJob.bind(null, next, chip, chipRoot)
-        } else {
-          // reconcile 执行完毕，如需执行 commit 任务，则返回 commit
-          // 子任务，否则当前任务返回 null 标记执行完毕
-          return performCommitWork.bind(null, chipRoot)
-        }
-      } else {
-        // 处理起始节点的子代节点
-        const next: Chip = reconcile(chip, chipRoot)
-        return reconcileJob.bind(null, next, chip)
-      }
-    }
-
-    return reconcileJob.bind(null, newChip)
+  // 创建新旧子序列之间的关联关系
+  connectChipChildren(chip.children, children, chip)
+  const reconcileJob = (chip: Chip, phase: boolean): Function => {
+    // reconcile 的收口节点是当前子节点对应的父节点，即 chip
+    const nextPointer: ChipTraversePointer = reconcile(chip, chipRoot, phase)
+    return reconcileJob.bind(null, nextPointer.next, nextPointer.phase)
   }
+
+  if (children) {
+    // 存在新的子节点，从最后一个子节点开始 reconcile
+    return () => {
+      return reconcileJob(children[children.length - 1], false)
+    }
+  }
+
+  // 无新的子节点，需将全部旧的子节点卸载
+  return () => {
+    // 根据要删除的节点生成对应的渲染描述
+    genRenderPayloadsForDeletions(chip.deletions, chipRoot)
+    // 批量将渲染描述提交到 dom 视图，并同步执行闲时任务
+    performCommitWork(chipRoot)
+    // 本次 reconcile 任务全部执行完毕，返回空子任务表示本任务结束
+    return null
+  }
+
+  // // renderData 是最新的渲染数据
+  // const { children } = renderData
+  // // 存在动态子代节点，触发新旧子代节点的 diff 流程，并生产对应的 render payload
+  // const newChip = cloneChip(chip, EMPTY_OBJ, children)
+  // newChip.wormhole = chip
+  // // trigger reconcile diff
+  // const ancestorChip: Chip = newChip
+  // const reconcileJob = (chip: Chip, lastChip: Chip): Function => {
+  //   // reconcile 持续进行到回溯至起始节点，返回 null 表示当前任务的全部子任务均已执行完毕
+  //   if (chip === ancestorChip) {
+  //     // 处理起始 chip 节点
+  //     if (chip.phase === ChipPhases.PENDING) {
+  //       if (renderMode === NukerRenderModes.CONCURRENT) {
+  //         // 如果是 concurrent 渲染模式，任务可能被打断并中途插入新的任务，
+  //         // 为保证任务重新开始后访问相对应的状态缓存，需要在 concurrent 任
+  //         // 重新开始时卸载已失效的状态缓存，比如执行到半途但被其他任务插入，
+  //         // 当该任务重新开始时由于要完全从头执行，因此将任务被打断前积累的
+  //         // 失效状态缓存作为垃圾信息清理掉
+  //         teardownChipCache(chipRoot)
+  //       }
+
+  //       const pointer: Chip = getPointerChip(chip.wormhole)
+  //       cacheIdleJob(
+  //         replaceChipContext.bind(null, chip, chip.wormhole, pointer),
+  //         chipRoot
+  //       )
+
+  //       // 返回处理下一组 chip 节点的子任务
+  //       const next: Chip = reconcile(chip, chipRoot)
+  //       return reconcileJob.bind(null, next, chip, chipRoot)
+  //     } else {
+  //       // reconcile 执行完毕，如需执行 commit 任务，则返回 commit
+  //       // 子任务，否则当前任务返回 null 标记执行完毕
+  //       return performCommitWork.bind(null, chipRoot)
+  //     }
+  //   } else {
+  //     // 处理起始节点的子代节点
+  //     const next: Chip = reconcile(chip, chipRoot)
+  //     return reconcileJob.bind(null, next, chip)
+  //   }
+  // }
+
+  // return reconcileJob.bind(null, newChip)
 }
 
 /**
@@ -1098,6 +1130,8 @@ export function initReconcileForElement(chip: Chip, chipRoot: ChipRoot): void {
  * @param chipRoot 
  */
 export function initReconcileForComponent(chip: Chip, chipRoot: ChipRoot): void {
+  // 优先复用相同类型组件节点的 instance，节省内存，但 refs & props 需要更新，
+  // 因为子代节点 & 外部属性都具有不确定性，因此需要使用最新的数据
   chip.instance = chip.wormhole?.instance && createComponentInstance((chip.tag as Component), chip)
   disableCollecting()
   mountComponentChildren(chip)

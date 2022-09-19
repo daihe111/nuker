@@ -8,7 +8,7 @@
  * reconcile tasks -> commit -> idle 需要作为一个整体任务注册进调度系统
  */
 
-import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot, ChipEffectUnit } from "./chip";
+import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot, ChipEffectUnit, ChipTypes } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend, createListAccessor, isArray } from "../../share/src";
 import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
@@ -47,104 +47,24 @@ function flushIdle(accessor: ListAccessor<IdleJobUnit> | void): boolean {
 }
 
 /**
- * 用 reconcile 阶段新生成的 chip 子树更新 chip 局部子树，并清理过期状态
- * 该更新局部 chip 树的方法存在内存隐患，直接替换局部 chip 节点，但是旧的 chip
- * 包括其子代 chip 仍然会保持对全局 effect 的引用，因此旧 chip 对应的内存
- * 不会被 GC 及时回收，如果要及时释放内存，需要深度遍历旧的 chip，这样会多一次
- * 遍历处理成本，因此暂不采用该方案进行局部 chip tree 的更新
- * @param chip 
- * @param anchorContext 
- */
-export function updateSubChipTree(chip: Chip, anchorContext: Chip): Chip {
-  const oldChip: Chip = chip.wormhole
-  if (anchorContext.lastChild === oldChip) {
-    anchorContext.lastChild = chip
-    chip.parent = anchorContext
-    chip.prevSibling = oldChip.prevSibling
-  } else {
-    anchorContext.prevSibling = chip
-    chip.parent = oldChip.parent
-    chip.prevSibling = oldChip.prevSibling
-  }
-
-  return chip
-}
-
-/**
  * 更新 chip 上下文信息
  * @param chip 
  * @param props 
  * @param children 
- * @param key 
  * @param restArgs 
  */
 export function updateChipContext(
   chip: Chip,
   props: ChipProps,
   children: ChipChildren,
-  key: ChipKey,
   ...restArgs: any[]
 ): Chip {
-  updateRefs(chip)
-  return extend(chip, { props, children, key, ...restArgs })
-}
-
-/**
- * 清理已失效 chip 上下文以及其持有的待回收信息
- * @param context 
- */
-export function removeChipContext(context: Chip, lastContext: Chip): void {
-  // 将 chip context 从树中移除
-  if (lastContext === context.parent) {
-    context.parent.firstChild = context.prevSibling
-  } else {
-    lastContext.prevSibling = context.prevSibling
-  }
-}
-
-/**
- * 将新挂载的 chip 上下文插入到 chip 树中
- * @param chip 
- */
-export function insertChipContext(context: Chip, anchorContext: Chip, isLast: boolean): Chip {
-  // 将 chip 插入 chip tree
-  if (isLast) {
-    context.parent = anchorContext
-    context.prevSibling = anchorContext.firstChild
-    anchorContext.firstChild = context
-  } else {
-    context.prevSibling = anchorContext.prevSibling
-    context.parent = anchorContext.parent
-    anchorContext.prevSibling = context
+  if (chip.chipType === ChipTypes.CUSTOM_COMPONENT) {
+    // 组件类型的 chip 由于子代节点可能变化，因此需要更新子代节点的引用
+    updateRefs(chip)
   }
 
-  return context
-}
-
-/**
- * 替换 chip 树中的指定 chip 节点
- * @param newContext 
- * @param oldContext 
- * @param anchorContext 
- */
-export function replaceChipContext(
-  newContext: Chip,
-  oldContext: Chip,
-  anchorContext: Chip
-): Chip {
-  if (oldContext.parent === anchorContext) {
-    // 子节点中的最后一个节点
-    anchorContext.lastChild = newContext
-    newContext.parent = anchorContext
-    newContext.prevSibling = oldContext.prevSibling
-  } else {
-    // 非子节点中的最后一个节点
-    anchorContext.prevSibling = newContext
-    newContext.prevSibling = oldContext.prevSibling
-    newContext.parent = anchorContext.parent
-  }
-
-  return newContext
+  return extend(chip, { props, children, ...restArgs })
 }
 
 export function updateRefs(chip: Chip): void {

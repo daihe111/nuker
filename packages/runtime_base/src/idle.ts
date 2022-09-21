@@ -8,9 +8,9 @@
  * reconcile tasks -> commit -> idle 需要作为一个整体任务注册进调度系统
  */
 
-import { Chip, ChipProps, ChipChildren, ChipKey, IdleJobUnit, ChipRoot, ChipEffectUnit, ChipTypes } from "./chip";
+import { Chip, ChipProps, ChipChildren, IdleJobUnit, ChipRoot, ChipEffectUnit, ChipTypes } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
-import { extend, createListAccessor, isArray } from "../../share/src";
+import { extend, isArray, addNodeToList } from "../../share/src";
 import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { unregisterJob } from "./scheduler";
@@ -83,15 +83,8 @@ function createIdleNode(job: Function): IdleJobUnit {
  * @param job 
  * @param chipRoot 
  */
-export function cacheIdleJob(job: Function, chipRoot: ChipRoot): Function {
-  const idleJobs: ListAccessor<IdleJobUnit> | void = chipRoot.idleJobs
-  const jobNode: IdleJobUnit = createIdleNode(job)
-  if (idleJobs) {
-    idleJobs.last = idleJobs.last.next = jobNode
-  } else {
-    chipRoot.idleJobs = createListAccessor<IdleJobUnit>(jobNode)
-  }
-
+export function cacheIdleJob(job: Function, idleJobs: ListAccessor<IdleJobUnit>): Function {
+  addNodeToList(idleJobs, createIdleNode(job))
   return job
 }
 
@@ -131,6 +124,16 @@ export function teardownAbandonedEffects(chip: Chip): void {
 }
 
 /**
+ * 批量卸载已移除 chip 上的状态信息
+ * @param deletions 
+ */
+export function teardownDeletions(deletions: Chip[]): void {
+  for (let i = 0; i < deletions.length; i++) {
+    teardownDeletion(deletions[i])
+  }
+}
+
+/**
  * 将已移除 chip 节点上的状态信息卸载
  * @param deletion 
  */
@@ -140,7 +143,7 @@ export function teardownDeletion(deletion: Chip): void {
   if (isArray(children)) {
     // array chips
     for (let i = 0; i < children.length; i++) {
-      teardownAbandonedEffects(children[i])
+      teardownDeletion(children[i])
     }
   }
 }

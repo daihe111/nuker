@@ -89,9 +89,32 @@ export function genBaseListNode(
   }
 }
 
-export function createListAccessor<Node = null>(
+/**
+ * 创建链表访问器
+ * @param first 
+ * @param last 
+ */
+export function createListAccessor<Node extends BaseListNode>(
   first: Node = null,
   last: Node = null
 ): ListAccessor<Node> {
   return { first, last: last || first }
+}
+
+/**
+ * 追加元素到链表访问器
+ * @param accessor 
+ * @param node 
+ */
+export function addNodeToList<Node extends BaseListNode>(
+  accessor: ListAccessor<Node>,
+  node: Node
+): Node {
+  if (accessor.first) {
+    accessor.last = accessor.last.next = node
+  } else {
+    accessor.last = accessor.first = node
+  }
+
+  return node
 }

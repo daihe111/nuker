@@ -15,7 +15,8 @@ import {
   createChipRoot,
   createChip,
   isSameChip,
-  ChipKey
+  ChipKey,
+  IdleJobUnit
 } from "./chip";
 import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ, deleteProperty, hasOwn, NOOP } from "../../share/src";
 import {
@@ -810,6 +811,9 @@ export function genReconcileJob(
   chipRoot: ChipRoot,
   { children }: DynamicRenderData
 ): Function {
+  const renderPayloads: RenderPayloadNode
+  const idleJobs: IdleJobUnit
+  const deletions: Chip[] = []
   // 创建新旧子序列之间的关联关系
   connectChipChildren(chip.children, children, chip)
   const ancestor: Chip = chip

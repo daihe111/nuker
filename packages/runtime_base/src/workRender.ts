@@ -811,6 +811,10 @@ export function genReconcileJob(
   chipRoot: ChipRoot,
   { children }: DynamicRenderData
 ): Function {
+  // 声明 reconcile 任务自身的缓存信息，此缓存信息会被子任务闭包使用，因此在当前
+  // reconcile 任务被打断作废后，须及时释放对应的闭包的引用。
+  // 任务作废后调度系统会放弃对该任务所产生子任务闭包的引用，转而引用原始的 reconcile
+  // 任务，因此一旦任务作废，闭包内部变量一定会被释放
   const renderPayloads: RenderPayloadNode
   const idleJobs: IdleJobUnit
   const deletions: Chip[] = []

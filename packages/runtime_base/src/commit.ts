@@ -12,8 +12,8 @@ export const PROP_TO_DELETE = Symbol()
  * 按照先后顺序执行 payload 节点，即可保证 commit 的执行顺序与 reconcile 一致
  * @param chipRoot 
  */
-export function performCommitWork(chipRoot: ChipRoot): null {
-  let currentPayload = chipRoot.renderPayloads?.first
+export function performCommitWork(renderPayloads: RenderPayloadNode): null {
+  let currentPayload = renderPayloads
   let i = 0
   while (currentPayload !== null) {
     try {
@@ -28,8 +28,6 @@ export function performCommitWork(chipRoot: ChipRoot): null {
     }
   }
 
-  // 进入 idle 阶段，批量执行闲时任务，如 chip 状态补偿任务、过期信息清理任务...
-  performIdleWork(chipRoot)
   return null
 }
 

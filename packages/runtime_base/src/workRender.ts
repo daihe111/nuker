@@ -18,7 +18,7 @@ import {
   ChipKey,
   IdleJobUnit
 } from "./chip";
-import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ, deleteProperty, hasOwn, NOOP } from "../../share/src";
+import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ, deleteProperty, hasOwn, NOOP, createListAccessor } from "../../share/src";
 import {
   registerJob,
   initScheduler
@@ -39,6 +39,7 @@ import {
 } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 import { currentEventPriority } from "../../runtime_dom/src/event";
+import { ListAccessor } from "../../share/src/shareTypes";
 
 export type AppContent = | Component
 
@@ -189,6 +190,7 @@ export function render(
   if (renderMode === NukerRenderModes.BATCH_SYNC) {
     initRenderEffectBuffer({
       onFlushed: () => {
+        // TODO 一次事件循环中声明一组 renderPayloads、idleJobs，即用即销，多次任务不耦合状态
         performCommitWork(chipRoot)
         performIdleWork(chipRoot)
       }
@@ -815,16 +817,19 @@ export function genReconcileJob(
   // reconcile 任务被打断作废后，须及时释放对应的闭包的引用。
   // 任务作废后调度系统会放弃对该任务所产生子任务闭包的引用，转而引用原始的 reconcile
   // 任务，因此一旦任务作废，闭包内部变量一定会被释放
-  const renderPayloads: RenderPayloadNode
-  const idleJobs: IdleJobUnit
+  const renderPayloads: ListAccessor<RenderPayloadNode> = createListAccessor()
+  const idleJobs: ListAccessor<IdleJobUnit> = createListAccessor()
   const deletions: Chip[] = []
   // 创建新旧子序列之间的关联关系
   connectChipChildren(chip.children, children, chip)
   const ancestor: Chip = chip
-  const reconcileJob = (chip: Chip, chipRoot: ChipRoot, phase: boolean): Function => {
+  let reconcileJob = (chip: Chip, chipRoot: ChipRoot, phase: boolean): Function => {
     if (chip === ancestor && phase) {
       // 回溯到祖先节点，全部子节点均已完成 reconcile
-      performCommitWork(chipRoot)
+      performCommitWork(renderPayloads.first)
+      // 批量执行 reconcile、commit 阶段缓存的闲时任务
+      performIdleWork(idleJobs.first)
+      // 结束当前 reconcile 任务，并将闭包释放
       return null
     }
 
@@ -847,8 +852,11 @@ export function genReconcileJob(
     // 根据要删除的节点生成对应的渲染描述
     genRenderPayloadsForDeletions(chip.deletions, chipRoot)
     // 批量将渲染描述提交到 dom 视图，并同步执行闲时任务
-    performCommitWork(chipRoot)
+    performCommitWork(renderPayloads.first)
+    // 批量执行 reconcile、commit 阶段缓存的闲时任务
+    performIdleWork(idleJobs.first)
     // 本次 reconcile 任务全部执行完毕，返回空子任务表示本任务结束
+    // 同时释放调度系统对闭包的引用，释放闭包变量
     return null
   }
 }

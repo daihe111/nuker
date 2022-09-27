@@ -19,31 +19,21 @@ import { unregisterJob } from "./scheduler";
  * 执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
  * @param chipRoot 
  */
-export function performIdleWork(chipRoot: ChipRoot): void {
-  flushIdle(chipRoot.idleJobs)
-  // 批量触发当前渲染周期内缓存的视图改变后的生命周期 (mounted | updated)
-  [LifecycleHooks.MOUNTED, LifecycleHooks.UPDATED].forEach((n: string) => {
-    invokeLifecycle(n, chipRoot)
-  })
-  teardownChipCache(chipRoot)
+export function performIdleWork(idleJobs: IdleJobUnit, ): void {
+  flushIdle(idleJobs)
 }
 
 /**
  * 批量执行闲时任务
  * @param accessor 
  */
-function flushIdle(accessor: ListAccessor<IdleJobUnit> | void): boolean {
-  if (!accessor || !accessor.first) {
-    return false
-  }
-
+function flushIdle(queue: IdleJobUnit): void {
   // 批量执行闲时任务
-  let currentUnit: IdleJobUnit = accessor.first
+  let currentUnit: IdleJobUnit = queue
   while (currentUnit !== null) {
     currentUnit.job()
     currentUnit = currentUnit.next
   }
-  return true
 }
 
 /**

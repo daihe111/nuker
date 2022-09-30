@@ -35,7 +35,8 @@ import {
   performIdleWork,
   teardownChipCache,
   teardownAbandonedEffects,
-  teardownDeletion
+  teardownDeletion,
+  updateChipContext
 } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
 import { currentEventPriority } from "../../runtime_dom/src/event";
@@ -819,11 +820,24 @@ export function genReconcileJob(
   // 任务，因此一旦任务作废，闭包内部变量一定会被释放
   const renderPayloads: ListAccessor<RenderPayloadNode> = createListAccessor()
   const idleJobs: ListAccessor<IdleJobUnit> = createListAccessor()
-  const deletions: Chip[] = []
+
+  // 缓存闲时任务
+  cacheIdleJob(() => {
+    // commit 阶段渲染 dom 会对 nuker 的 chip 产生数据层面的副作用，
+    // 导致 dom 节点与 chip 数据不同步，因此 commit 后需将最新 dom
+    // 数据补偿到对应 chip
+    updateChipContext(chip, null, children)
+  }, idleJobs)
   // 创建新旧子序列之间的关联关系
   connectChipChildren(chip.children, children, chip)
   const ancestor: Chip = chip
-  let reconcileJob = (chip: Chip, chipRoot: ChipRoot, phase: boolean): Function => {
+  let reconcileJob = (
+    chip: Chip,
+    chipRoot: ChipRoot,
+    phase: boolean,
+    renderPayloads: ListAccessor<RenderPayloadNode>,
+    idleJobs: ListAccessor<IdleJobUnit>
+  ): Function => {
     if (chip === ancestor && phase) {
       // 回溯到祖先节点，全部子节点均已完成 reconcile
       performCommitWork(renderPayloads.first)
@@ -833,17 +847,35 @@ export function genReconcileJob(
       return null
     }
 
-    const nextPointer: ChipTraversePointer = reconcile(chip, chipRoot, phase)
+    const nextPointer: ChipTraversePointer = reconcile(
+      chip,
+      chipRoot,
+      phase,
+      renderPayloads,
+      idleJobs
+    )
     // 生成子任务
     return () => {
-      return reconcileJob(nextPointer.next, chipRoot, nextPointer.phase)
+      return reconcileJob(
+        nextPointer.next,
+        chipRoot,
+        nextPointer.phase,
+        renderPayloads,
+        idleJobs
+      )
     }
   }
 
   if (children) {
     // 存在新的子节点，从最后一个子节点开始 reconcile
     return () => {
-      return reconcileJob(children[children.length - 1], chipRoot, false)
+      return reconcileJob(
+        children[children.length - 1],
+        chipRoot,
+        false,
+        renderPayloads,
+        idleJobs
+      )
     }
   }
 
@@ -892,22 +924,22 @@ export function isChipItselfSkipable(chip: Chip): boolean {
  * 每个 chip 节点对的 diff 作为一个任务单元，且任务之间支持被调度系统打断、恢复
  * @param chip 
  * @param chipRoot 
+ * @param phase 
+ * @param renderPayloads 
+ * @param idleJobs 
  */
-export function reconcile(chip: Chip, chipRoot: ChipRoot): Chip {
-  // 下一组要处理的 chip 节点对
-  let nextChip: Chip
-  switch (chip.phase) {
-    case ChipPhases.PENDING:
-      // 1. 首次遍历
-      nextChip = initReconcile(chip, chipRoot)
-      break
-    case ChipPhases.INITIALIZE:
-      // 2. 回溯
-      nextChip = completeReconcile(chip, chipRoot)
-      break
+export function reconcile(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  phase: boolean,
+  renderPayloads: ListAccessor<RenderPayloadNode>,
+  idleJobs: ListAccessor<IdleJobUnit>
+): ChipTraversePointer {
+  if (phase) {
+    return completeReconcile(chip, chipRoot, renderPayloads, idleJobs)
+  } else {
+    return initReconcile(chip, chipRoot, renderPayloads, idleJobs)
   }
-
-  return nextChip
 }
 
 /**

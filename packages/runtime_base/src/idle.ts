@@ -1,4 +1,5 @@
 /**
+ * idle 阶段主要处理渲染过程中产生的闲时任务，如 chip 数据补偿、过期数据清理
  * 1. commit 视图变化后需要立即将当前批次 commit 产生的闲时任务全部执行完，且中途不可打断，
  *    保证试图渲染后所有涉及到的状态信息及时同步到对应的 virtual dom 上
  * 2. concurrent 渲染模式下，commit 视图变化后不希望插入其他渲染任务，如果插入，会导致
@@ -46,15 +47,17 @@ function flushIdle(queue: IdleJobUnit): void {
 export function updateChipContext(
   chip: Chip,
   props: ChipProps,
-  children: ChipChildren,
-  ...restArgs: any[]
+  children: ChipChildren
 ): Chip {
   if (chip.chipType === ChipTypes.CUSTOM_COMPONENT) {
     // 组件类型的 chip 由于子代节点可能变化，因此需要更新子代节点的引用
     updateRefs(chip)
   }
 
-  return extend(chip, { props, children, ...restArgs })
+  return extend(chip, {
+    props: props || chip.props,
+    children: children || chip.children
+  })
 }
 
 export function updateRefs(chip: Chip): void {

@@ -946,17 +946,21 @@ export function reconcile(
  * 深度遍历阶段处理 chip 节点对
  * @param chip 
  * @param chipRoot 
+ * @param renderPayloads 
+ * @param idleJobs 
  */
-export function initReconcile(chip: Chip, chipRoot: ChipRoot): Chip {
-  chip.phase = ChipPhases.INITIALIZE
-
+export function initReconcile(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  renderPayloads: ListAccessor<RenderPayloadNode>,
+  idleJobs: ListAccessor<IdleJobUnit>
+): ChipTraversePointer {
   // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
   // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
-  let nextChip: Chip
   if (isChipSkipable(chip)) {
     // chip 及其子代全部可跳过
     chip.skipable = true
-    nextChip = completeReconcile(chip, chipRoot)
+    return completeReconcile(chip, chipRoot, renderPayloads, idleJobs)
   } else {
     if (isChipItselfSkipable(chip)) {
       // chip 节点本身可跳过 reconcile
@@ -966,30 +970,18 @@ export function initReconcile(chip: Chip, chipRoot: ChipRoot): Chip {
       initReconcileForChip(chip, chipRoot)
     }
 
-    // 获取下一个需要处理的 chip 节点
-    const { children, wormhole } = chip
-    const lastChild: Chip = getLastChipChild(children)
+    // 新旧子节点序列建立关联关系
+    connectChipChildren(chip.wormhole?.children, chip.children, chip)
+    const lastChild = getLastChipChild(chip.children)
     if (lastChild) {
-      chip.lastChild = lastChild
-      lastChild.parent = chip
-      chip.currentChildIndex = (isArray(children) ? (children.length - 1) : 0)
-      // 建立新旧 chip 子节点之间的映射关系，便于 chip-tree 回溯阶段
-      // 通过新旧节点间的映射关系进行节点对的 diff
-      // 如果当前节点无对应的旧节点，那么子代节点不会做匹配，因此一旦某个
-      // chip 节点不存在对应的旧节点，该 chip 对应的整个子树都不会有旧
-      // 节点与之匹配
-      const oldChildren: ChipChildren = wormhole?.children
-      if (oldChildren && children) {
-        connectChipChildren(oldChildren, children, chip)
+      return {
+        next: lastChild,
+        phase: false
       }
-
-      nextChip = lastChild
     } else {
-      nextChip = completeReconcile(chip, chipRoot)
+      return completeReconcile(chip, chipRoot, renderPayloads, idleJobs)
     }
   }
-
-  return nextChip
 }
 
 /**
@@ -1000,8 +992,10 @@ export function initReconcile(chip: Chip, chipRoot: ChipRoot): Chip {
  */
 export function completeReconcile(
   chip: Chip,
-  chipRoot: ChipRoot
-): Chip {
+  chipRoot: ChipRoot,
+  renderPayloads: ListAccessor<RenderPayloadNode>,
+  idleJobs: ListAccessor<IdleJobUnit>
+): ChipTraversePointer {
   chip.phase = ChipPhases.COMPLETE
 
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload

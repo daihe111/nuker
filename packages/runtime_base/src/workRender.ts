@@ -35,7 +35,7 @@ import {
   performIdleWork,
   teardownChipCache,
   teardownAbandonedEffects,
-  teardownDeletion,
+  teardownDeletions,
   updateChipContext
 } from "./idle";
 import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
@@ -955,6 +955,9 @@ export function initReconcile(
   renderPayloads: ListAccessor<RenderPayloadNode>,
   idleJobs: ListAccessor<IdleJobUnit>
 ): ChipTraversePointer {
+  // 祖先节点入栈
+  ancestors.push(chip)
+
   // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
   // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
   if (isChipSkipable(chip)) {
@@ -996,46 +999,34 @@ export function completeReconcile(
   renderPayloads: ListAccessor<RenderPayloadNode>,
   idleJobs: ListAccessor<IdleJobUnit>
 ): ChipTraversePointer {
-  chip.phase = ChipPhases.COMPLETE
-
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
-  if (!chip.selfSkipable) {
+  if (!chip.selfSkipable && !chip.skipable) {
     // 优先处理子节点事务，根据收集的待删除子节点生成对应的 render payload
     if (hasDeletions(chip)) {
-      genRenderPayloadsForDeletions(chip.deletions, chipRoot)
+      genRenderPayloadsForDeletions(chip.deletions, renderPayloads, idleJobs)
     }
     // 生成当前节点 diff 的 render payload 并入队
-    reconcileToGenRenderPayload(chip, chipRoot)
-    // 入队深度遍历阶段缓存在当前节点上的 render payload，如该节点的 dom 移动操作
-    cacheRenderPayload(chip.renderPayloads.first, chipRoot)
-
+    reconcileToGenRenderPayload(chip, chipRoot, renderPayloads)
     completeReconcileForChip(chip, chipRoot)
   }
 
+  // 当前节点 reconcile 完毕，出栈
+  ancestors.pop()
+  const parent: Chip = ancestors[ancestors.length - 1]
+  const prevSibling: Chip = parent.children[chip.position - 1]
+
   // 获取下一组需要处理的 chip 节点对
-  let sibling: Chip = chip.prevSibling
-  if (sibling === null) {
-    // 尝试创建有效 sibling 节点
-    const parent: Chip = chip.parent
-    const children: ChipChildren = parent?.children
-    if (isArray(children)) {
-      sibling = children[--parent.currentChildIndex]
+  if (prevSibling) {
+    return {
+      next: prevSibling,
+      phase: false
+    }
+  } else {
+    return {
+      next: parent,
+      phase: true
     }
   }
-
-  let next: Chip
-  if (sibling) {
-    // 如果存在同级兄弟节点，则兄弟节点作为下一个要处理的 chip 节点
-    chip.prevSibling = sibling
-    sibling.parent = chip.parent
-    next = sibling
-  } else {
-    // 无同级兄弟节点，表明与当前节点同级的节点全部处理完毕，则开始
-    // 回溯，以当前节点的父节点作为下一个待处理的 chip 节点
-    next = chip.parent
-  }
-
-  return next
 }
 
 /**
@@ -1378,10 +1369,10 @@ export function hasDeletions(chip: Chip): boolean {
  */
 export function reconcileToGenRenderPayload(
   chip: Chip,
-  chipRoot: ChipRoot
-): RenderPayloadNode | RenderPayloadNode[] {
+  chipRoot: ChipRoot,
+  renderPayloads: ListAccessor<RenderPayloadNode>
+): void {
   const { tag, props, wormhole } = chip
-  let payload: RenderPayloadNode | RenderPayloadNode[]
   if (wormhole) {
     // 有匹配的旧节点，且新旧 chip 节点一定是相似节点
     cacheRenderPayload(
@@ -1401,7 +1392,7 @@ export function reconcileToGenRenderPayload(
           context.elm = elm
         }
       ),
-      chipRoot
+      renderPayloads
     )
   } else {
     // 无匹配到的旧 chip 节点，新 chip 为待挂载节点。由于 dive 阶段
@@ -1419,11 +1410,9 @@ export function reconcileToGenRenderPayload(
         (tag as string),
         props
       ),
-      chipRoot
+      renderPayloads
     )
   }
-  
-  return payload
 }
 
 /**
@@ -1431,20 +1420,29 @@ export function reconcileToGenRenderPayload(
  * @param deletions 
  * @param chipRoot 
  */
-export function genRenderPayloadsForDeletions(deletions: Chip[], chipRoot: ChipRoot): void {
+export function genRenderPayloadsForDeletions(
+  deletions: Chip[],
+  renderPayloads: ListAccessor<RenderPayloadNode>,
+  idleJobs: ListAccessor<IdleJobUnit>
+): void {
   for (let i = 0; i < deletions.length; i++) {
     const deletion = deletions[i]
     const elm = deletion.elm
-    const payload = createRenderPayloadNode(
-      elm,
-      domOptions.parentNode(elm),
-      null,
-      RenderUpdateTypes.UNMOUNT,
-      deletion
+    cacheRenderPayload(
+      createRenderPayloadNode(
+        elm,
+        domOptions.parentNode(elm),
+        null,
+        RenderUpdateTypes.UNMOUNT,
+        deletion
+      ),
+      renderPayloads
     )
-    cacheRenderPayload(payload, chipRoot)
-    cacheIdleJob(teardownDeletion.bind(null, deletion), chipRoot)
   }
+
+  cacheIdleJob(() => {
+    teardownDeletions(deletions)
+  }, idleJobs)
 }
 
 /**
@@ -1503,26 +1501,14 @@ export function reconcileProps(
  * @param chipRoot 
  */
 export function cacheRenderPayload(
-  payload: RenderPayloadNode | RenderPayloadNode[],
-  chip: ChipRoot | Chip
-): RenderPayloadNode | RenderPayloadNode[] {
-  if (isArray(payload)) {
-    for (let i = 0; i < payload.length; i++) {
-      cacheRenderPayload(payload[i], chip)
-    }
+  payload: RenderPayloadNode,
+  queue: ListAccessor<RenderPayloadNode>
+): void {
+  if (queue.first) {
+    queue.last = queue.last.next = payload
   } else {
-    const payloads = chip.renderPayloads
-    if (payloads) {
-      payloads.last = payloads.last.next = payload
-    } else {
-      chip.renderPayloads = {
-        first: payload,
-        last: payload
-      }
-    }
+    queue.last = queue.first = payload
   }
-
-  return payload
 }
 
 /**

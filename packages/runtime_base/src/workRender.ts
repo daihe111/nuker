@@ -977,6 +977,8 @@ export function initReconcile(
     connectChipChildren(chip.wormhole?.children, chip.children, chip)
     const lastChild = getLastChipChild(chip.children)
     if (lastChild) {
+      // 标记节点在同级节点序列中的索引
+      lastChild.position = chip.children.length - 1
       return {
         next: lastChild,
         phase: false
@@ -1013,10 +1015,13 @@ export function completeReconcile(
   // 当前节点 reconcile 完毕，出栈
   ancestors.pop()
   const parent: Chip = ancestors[ancestors.length - 1]
-  const prevSibling: Chip = parent.children[chip.position - 1]
+  const prevIndex: number = chip.position - 1
+  const prevSibling: Chip = parent.children[prevIndex]
 
   // 获取下一组需要处理的 chip 节点对
   if (prevSibling) {
+    // 标记节点在同级节点序列中的索引
+    prevSibling.position = prevIndex
     return {
       next: prevSibling,
       phase: false

@@ -100,7 +100,7 @@ export interface Chip extends ChipCore {
   instance: ChipInstance
   directives?: unknown
   components?: unknown
-  childMaySkip?: boolean // chip 的部分子代节点在 reconcile 阶段有可能被跳过，仅可迭代 fragment 会持有该属性
+  source?: unknown // 生成当前节点的源数据，仅可迭代节点的单元节点会有该属性
   selfSkipable?: true // 标记 chip 节点本身是否可跳过 reconcile
   skipable?: true // 标记 chip 节点及其子代是否全部可跳过 reconcile
   deletions?: Chip[] // 缓存当前 chip 下需要删除的一级子 chip

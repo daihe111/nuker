@@ -634,10 +634,11 @@ export function createRenderEffectForIterableChip(
     const children: Chip[] = []
     const sourceLiteral: object = sourceGetter()
     setLiteralForDynamicValue(sourceLiteral, sourceGetter)
-    // 若根数据源本次渲染未发生变化，说明该 renderEffect 是由数据源的子代数据改变触发的
-    chip.childMaySkip = (sourceLiteral === sourceGetter.value)
     for (const key in sourceLiteral) {
-      const child: Chip = (render(sourceLiteral[key]) as Chip)
+      const source = sourceLiteral[key]
+      const child: Chip = (render(source) as Chip)
+      // 建立节点与生成该节点数据源间的映射关系
+      child.source = source
       children.push(child)
     }
     chip.children = children
@@ -882,7 +883,7 @@ export function genReconcileJob(
   // 无新的子节点，需将全部旧的子节点卸载
   return () => {
     // 根据要删除的节点生成对应的渲染描述
-    genRenderPayloadsForDeletions(chip.deletions, chipRoot)
+    genRenderPayloadsForDeletions(chip.deletions, renderPayloads, idleJobs)
     // 批量将渲染描述提交到 dom 视图，并同步执行闲时任务
     performCommitWork(renderPayloads.first)
     // 批量执行 reconcile、commit 阶段缓存的闲时任务
@@ -900,11 +901,11 @@ export function genReconcileJob(
 export function isChipSkipable(chip: Chip): boolean {
   // chip reconcile 跳过的条件，满足其一即可:
   // 1. 节点本身为静态，且距离当前节点最近的 chip block 具有稳定的子代结构
-  // 2. 可迭代数据生成的相似节点对 (key 相同代表对应数据源未发生变化)，且可迭代数据源本身无引用级变化
+  // 2. 可迭代数据生成的相似节点对原始数据源相同，渲染器相同的情况下所生成的节点一定是完全一致的，无需 diff
   return Boolean(
     chip.wormhole &&
     ((chip.compileFlags & CompileFlags.COMPLETE_STATIC) ||
-    (chip.parent.childMaySkip && chip.key))
+    chip.source === chip.wormhole.source)
   )
 }
 
@@ -970,7 +971,7 @@ export function initReconcile(
       chip.selfSkipable = true
     } else {
       // chip 节点不可跳过 reconcile
-      initReconcileForChip(chip, chipRoot)
+      initReconcileForChip(chip, chipRoot, renderPayloads, idleJobs)
     }
 
     // 新旧子节点序列建立关联关系
@@ -1043,11 +1044,16 @@ export function completeReconcile(
  * @param chip 
  * @param chipRoot 
  */
-export function initReconcileForChip(chip: Chip, chipRoot: ChipRoot): Chip {
+export function initReconcileForChip(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  renderPayloads: ListAccessor<RenderPayloadNode>,
+  idleJobs: ListAccessor<IdleJobUnit>
+): void {
   const { chipType, wormhole } = chip
   switch (chipType) {
     case ChipTypes.NATIVE_DOM:
-      initReconcileForElement(chip, chipRoot)
+      initReconcileForElement(chip, renderPayloads)
       break
     case ChipTypes.CONDITION:
       // 条件节点
@@ -1066,10 +1072,10 @@ export function initReconcileForChip(chip: Chip, chipRoot: ChipRoot): Chip {
   // 卸载当前 chip 对应的旧 chip (相似节点) 上的 effects，当前
   // chip 初始化时会重新对新的动态数据进行渲染副作用收集
   if (wormhole) {
-    cacheIdleJob(teardownAbandonedEffects.bind(null, wormhole), chipRoot)
+    cacheIdleJob(() => {
+      teardownAbandonedEffects(wormhole)
+    }, idleJobs)
   }
-
-  return chip
 }
 
 /**
@@ -1103,7 +1109,10 @@ export function initIterableChip(chip: Chip, chipRoot: ChipRoot): Chip {
  * @param chip 
  * @param chipRoot 
  */
-export function initReconcileForElement(chip: Chip, chipRoot: ChipRoot): void {
+export function initReconcileForElement(
+  chip: Chip,
+  renderPayloads: ListAccessor<RenderPayloadNode>
+): void {
   if (!chip.wormhole) {
     // 生成对应的 dom 容器创建 render payload
     cacheRenderPayload(
@@ -1121,7 +1130,7 @@ export function initReconcileForElement(chip: Chip, chipRoot: ChipRoot): void {
           context.elm = elm
         }
       ),
-      chipRoot
+      renderPayloads
     )
   }
 }

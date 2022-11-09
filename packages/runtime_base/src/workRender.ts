@@ -174,9 +174,8 @@ const ancestors: Chip[] = [] // 祖先节点栈
 export function render(
   appContent: AppContent,
   container: Element | string,
-  { renderMode: rm }: NukerRenderOptions
+  options?: NukerRenderOptions
 ): Element {
-  renderMode = isNumber(rm) ? rm : NukerRenderModes.TIME_SPLICING
   const chip: Chip = createChip(appContent)
   const chipRoot: ChipRoot = createChipRoot(chip)
 
@@ -188,17 +187,25 @@ export function render(
   }
 
   // 首次挂载视图结束，执行框架初始化逻辑
+  // 框架默认渲染模式为 BATCH_SYNC
+  let renderMode: number = NukerRenderModes.BATCH_SYNC
+  if (options && isNumber(options.renderMode)) {
+    renderMode = options.renderMode
+  }
+
   if (renderMode === NukerRenderModes.BATCH_SYNC) {
     initRenderEffectBuffer({
       onFlushed: () => {
-        // TODO 一次事件循环中声明一组 renderPayloads、idleJobs，即用即销，多次任务不耦合状态
-        performCommitWork(chipRoot)
-        performIdleWork(chipRoot)
+        // 一次事件循环中声明一组 renderPayloads、idleJobs，即用即销，多次任务不耦合状态
+        const renderPayloads: ListAccessor<RenderPayloadNode> = createListAccessor()
+        const idleJobs: ListAccessor<IdleJobUnit> = createListAccessor()
+        performCommitWork(renderPayloads.first)
+        performIdleWork(idleJobs.first)
       }
     })
   } else {
     initScheduler({
-      ...rm === NukerRenderModes.CONCURRENT ? {
+      ...renderMode === NukerRenderModes.CONCURRENT ? {
         // 批同步任务开始收敛前重置全局渲染缓存信息
         onConvergentJobsStarted: teardownChipCache.bind(null, chipRoot),
         // 批同步任务结束收敛后批量执行 commit 阶段产生的闲时任务，并重置

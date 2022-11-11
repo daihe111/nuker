@@ -203,16 +203,6 @@ export function render(
         performIdleWork(idleJobs.first)
       }
     })
-  } else {
-    initScheduler({
-      ...renderMode === NukerRenderModes.CONCURRENT ? {
-        // 批同步任务开始收敛前重置全局渲染缓存信息
-        onConvergentJobsStarted: teardownChipCache.bind(null, chipRoot),
-        // 批同步任务结束收敛后批量执行 commit 阶段产生的闲时任务，并重置
-        // 全局渲染缓存信息
-        onConvergentJobsFinished: performIdleWork.bind(null, chipRoot)
-      } : {}
-    })
   }
 
   return container
@@ -534,20 +524,16 @@ export function mountElementForChip(chip: Chip): Element {
 /**
  * 直接同步更新视图，同时缓存闲时任务，当满足条件时进入 idle 阶段执行相应的任务
  * @param chip 
- * @param chipRoot 
  * @param props 
  */
 export function patchMutationSync(
   chip: Chip,
-  chipRoot: ChipRoot,
   props: object
 ): void {
   // commit 视图变化
   commitProps(chip.elm, props)
-  // 缓存闲时任务，将最新的属性状态补偿到对应的 chip 上
-  cacheIdleJob(() => {
-    chip.props = extend(chip.props, props)
-  }, chipRoot)
+  // 将更新后的属性值补偿到对应的 chip 上下文
+  extend(chip.props, props)
 }
 
 /**
@@ -583,7 +569,7 @@ export function createRenderEffectForProp(
   }, (newData: DynamicRenderData) => {
     // dispatcher: 响应式数据更新后触发
     // 使用最新的渲染数据直接同步刷新视图
-    return patchMutationSync(chip, chipRoot, newData.props)
+    return patchMutationSync(chip, newData.props)
   }, {
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑

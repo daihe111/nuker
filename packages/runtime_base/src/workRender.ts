@@ -697,7 +697,7 @@ export function handleChildJobOfRenderEffect(
       return job
     case NukerRenderModes.BATCH_SYNC:
     default:
-      return performReconcileSync(chip, chipRoot)
+      return performReconcileSync(chip, chipRoot, newData)
   }
 }
 
@@ -705,25 +705,30 @@ export function handleChildJobOfRenderEffect(
  * 同步执行节点域的协调工作
  * @param chip 
  * @param chipRoot 
+ * @param renderData
  */
-export function performReconcileSync(chip: Chip, chipRoot: ChipRoot): void {
-  const ancestorChip: Chip = chip
-  let current: Chip = ancestorChip
-  while (true) {
-    if (current === ancestorChip) {
-      if (current.phase === ChipPhases.PENDING) {
-        const pointer: Chip = getPointerChip(chip.wormhole)
-        cacheIdleJob(
-          replaceChipContext.bind(null, chip, chip.wormhole, pointer),
-          chipRoot
-        )
-        current = reconcile(current, chipRoot)
-      } else {
-        break
-      }
-    } else {
-      current = reconcile(current, chipRoot)
+export function performReconcileSync(
+  chip: Chip,
+  chipRoot: ChipRoot,
+  { children }: DynamicRenderData
+): void {
+  const ancestor: Chip = chip
+  const renderPayloads: ListAccessor<RenderPayloadNode> = createListAccessor()
+  const idleJobs: ListAccessor<IdleJobUnit> = createListAccessor()
+  // 建立新旧子节点序列之间的关联
+  connectChipChildren(chip.children, children, chip)
+  if (children?.length) {
+    let traversePointer: ChipTraversePointer = {
+      next: 
     }
+    while () {
+  
+    }
+  } else {
+    // 无新的子代节点，生成待删除节点的 render payload，并批量提交到 dom
+    genRenderPayloadsForDeletions(chip.deletions, renderPayloads, idleJobs)
+    performCommitWork(renderPayloads.first)
+    performIdleWork(idleJobs.first)
   }
 }
 

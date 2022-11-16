@@ -682,7 +682,7 @@ export function handleChildJobOfRenderEffect(
   chip: Chip,
   chipRoot: ChipRoot,
   newData: DynamicRenderData
-): unknown {
+): Function | void {
   // 新旧 children 进行 reconcile
   const job: Function = genReconcileJob(
     chip,
@@ -715,8 +715,11 @@ export function performReconcileSync(
   const ancestor: Chip = chip
   const renderPayloads: ListAccessor<RenderPayloadNode> = createListAccessor()
   const idleJobs: ListAccessor<IdleJobUnit> = createListAccessor()
-  // 建立新旧子节点序列之间的关联
-  connectChipChildren(chip.children, children, chip)
+  if (chip.children && children) {
+    // 建立新旧子节点序列之间的关联
+    connectChipChildren(chip.children, children, chip)
+  }
+
   if (children?.length) {
     let traversePointer: ChipTraversePointer = {
       next: 
@@ -726,7 +729,7 @@ export function performReconcileSync(
     }
   } else {
     // 无新的子代节点，生成待删除节点的 render payload，并批量提交到 dom
-    genRenderPayloadsForDeletions(chip.deletions, renderPayloads, idleJobs)
+    genRenderPayloadsForDeletions(chip.children, renderPayloads, idleJobs)
     performCommitWork(renderPayloads.first)
     performIdleWork(idleJobs.first)
   }
@@ -827,8 +830,12 @@ export function genReconcileJob(
     // 数据补偿到对应 chip
     updateChipContext(chip, null, children)
   }, idleJobs)
-  // 创建新旧子序列之间的关联关系
-  connectChipChildren(chip.children, children, chip)
+
+  if (chip.children && children) {
+    // 创建新旧子序列之间的关联关系
+    connectChipChildren(chip.children, children, chip)
+  }
+
   const ancestor: Chip = chip
   let reconcileJob = (
     chip: Chip,
@@ -865,7 +872,7 @@ export function genReconcileJob(
     }
   }
 
-  if (children) {
+  if (children?.length) {
     // 存在新的子节点，从最后一个子节点开始 reconcile
     return () => {
       return reconcileJob(
@@ -881,7 +888,7 @@ export function genReconcileJob(
   // 无新的子节点，需将全部旧的子节点卸载
   return () => {
     // 根据要删除的节点生成对应的渲染描述
-    genRenderPayloadsForDeletions(chip.deletions, renderPayloads, idleJobs)
+    genRenderPayloadsForDeletions(chip.children, renderPayloads, idleJobs)
     // 批量将渲染描述提交到 dom 视图，并同步执行闲时任务
     performCommitWork(renderPayloads.first)
     // 批量执行 reconcile、commit 阶段缓存的闲时任务

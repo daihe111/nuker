@@ -721,12 +721,28 @@ export function performReconcileSync(
   }
 
   if (children?.length) {
-    let traversePointer: ChipTraversePointer = {
-      next: 
+    let currentPointer: ChipTraversePointer = {
+      next: children[children.length - 1],
+      phase: false
     }
-    while () {
+    while (true) {
+      const { next, phase } = currentPointer
+      if (next === ancestor && phase) {
+        // 回溯到祖先节点，局部 chip 的 reconcile 全部完成
+        break
+      }
   
+      currentPointer = reconcile(
+        next,
+        chipRoot,
+        phase,
+        renderPayloads,
+        idleJobs
+      )
     }
+
+    performCommitWork(renderPayloads.first)
+    performIdleWork(idleJobs.first)
   } else {
     // 无新的子代节点，生成待删除节点的 render payload，并批量提交到 dom
     genRenderPayloadsForDeletions(chip.children, renderPayloads, idleJobs)

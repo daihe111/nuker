@@ -715,6 +715,15 @@ export function performReconcileSync(
   const ancestor: Chip = chip
   const renderPayloads: ListAccessor<RenderPayloadNode> = createListAccessor()
   const idleJobs: ListAccessor<IdleJobUnit> = createListAccessor()
+
+  // 缓存闲时任务
+  cacheIdleJob(() => {
+    // commit 阶段渲染 dom 会对 nuker 的 chip 产生数据层面的副作用，
+    // 导致 dom 节点与 chip 数据不同步，因此 commit 后需将最新 dom
+    // 数据补偿到对应 chip
+    updateChipContext(chip, null, children)
+  }, idleJobs)
+
   if (chip.children && children) {
     // 建立新旧子节点序列之间的关联
     connectChipChildren(chip.children, children, chip)
@@ -756,10 +765,14 @@ export function performReconcileSync(
  * @param chip 
  */
 export function getAncestorContainer(chip: Chip): Element {
-  let current: Chip = chip.parent
-  while (current.elm === null)
-    current = current.parent
-  return current.elm
+  for (let i = ancestors.length - 2; i >= 0; i--) {
+    const elm = ancestors[i]?.elm
+    if (elm) {
+      return elm
+    }
+  }
+
+  return null
 }
 
 /**

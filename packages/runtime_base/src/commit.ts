@@ -32,7 +32,7 @@ export function performCommitWork(renderPayloads: RenderPayloadNode): null {
 }
 
 /**
- * 将渲染描述载荷提交到真正的 dom 上
+ * 将渲染载荷提交到真正的 dom 上
  * @param renderPayload 
  */
 export function commitRenderPayload({
@@ -41,16 +41,16 @@ export function commitRenderPayload({
   props,
   container,
   parentContainer,
-  anchorContainer,
   context,
+  parentcontext,
+  anchorcontext,
   callback
 }: RenderPayloadNode): void {
+  const elm = container || context.elm
+
   if (type & RenderUpdateTypes.PATCH_PROP) {
     // commit 属性到 dom
-    commitProps(
-      container || context.elm,
-      props
-    )
+    commitProps(elm, props)
   }
 
   if (type & RenderUpdateTypes.MOUNT) {
@@ -67,8 +67,8 @@ export function commitRenderPayload({
 
   if (type & RenderUpdateTypes.UNMOUNT) {
     commitUnmountMutation(
-      container,
-      parentContainer
+      elm,
+      parentcontext.elm
     )
   }
 
@@ -88,7 +88,7 @@ export function commitRenderPayload({
   }
 
   if (isFunction(callback)) {
-    callback(context, container)
+    callback(context, elm)
   }
 }
 

@@ -76,10 +76,15 @@ export interface RenderPayloadNode {
   type: number
   container?: Element
   parentContainer?: Element
-  anchorContainer?: Element | null
   tag?: string
   props?: Record<string | number | symbol, any>
+
+  // contexts
   context: Chip // 当前 render payload 所属 chip 上下文
+  parentContext?: Chip
+  anchorContext?: Chip
+
+  // hooks
   callback?: Function // render payload commit 之后要执行的回调
 
   // pointers
@@ -810,13 +815,14 @@ export function cacheEffectToChip(effect: Effect, chip: Chip): Effect {
  * @param callback 
  */
 export function createRenderPayloadNode(
+  type: number,
+  tag: string,
+  props: Record<string | number | symbol, any>,
   container: Element,
   parentContainer: Element,
-  anchorContainer: Element | null,
-  type: number,
   context: Chip,
-  tag?: string,
-  props?: Record<string | number | symbol, any>,
+  parentContext?: Chip,
+  anchorContext?: Chip,
   callback?: Function
 ): RenderPayloadNode {
   return {
@@ -828,7 +834,8 @@ export function createRenderPayloadNode(
     next: null,
     container,
     parentContainer,
-    anchorContainer,
+    parentContext,
+    anchorContext,
     callback
   }
 }
@@ -1151,12 +1158,13 @@ export function initReconcileForElement(
     // 生成对应的 dom 容器创建 render payload
     cacheRenderPayload(
       createRenderPayloadNode(
-        null,
-        null,
-        null,
         RenderUpdateTypes.CREATE_ELEMENT,
-        chip,
         (chip.tag as string),
+        null,
+        null,
+        null,
+        chip,
+        null,
         null,
         (context: Chip, elm: Element) => {
           // 当前 render payload commit 之后，将创建的 dom 容器
@@ -1424,17 +1432,28 @@ export function reconcileToGenRenderPayload(
   if (wormhole) {
     // 有匹配的旧节点，且新旧 chip 节点一定是相似节点
     cacheRenderPayload(
-      createRenderPayloadNode(
-        wormhole.elm, // 此时新 chip 还未 commit 到 dom，因此获取不到实际的 element 元素
-        null,
-        null,
-        // 更新节点属性 & 将需要移动的节点移动到指定位置
-        chip.move ?
-          RenderUpdateTypes.PATCH_PROP | RenderUpdateTypes.MOVE :
-          RenderUpdateTypes.PATCH_PROP,
-        chip,
+      chip.move ? createRenderPayloadNode(
+        RenderUpdateTypes.PATCH_PROP | RenderUpdateTypes.MOVE, // 更新节点属性 & 将需要移动的节点移动到指定位置
         (tag as string),
         reconcileProps(chip, wormhole, chipRoot),
+        wormhole.elm, // 此时新 chip 还未 commit 到 dom，因此获取不到实际的 element 元素
+        domOptions.parentNode(wormhole.elm), // 移动节点所需父容器节点
+        chip,
+        null,
+        ancestors[ancestors.length - 2].children[chip.position + 1], // 当前 chip 节点的后一个兄弟节点作为移动插入锚点
+        (context: Chip, elm: Element) => {
+          // render payload 执行完毕后触发，为当前 chip 上下文挂载对应的 dom 节点
+          context.elm = elm
+        }
+      ) : createRenderPayloadNode(
+        RenderUpdateTypes.PATCH_PROP, // 更新节点属性 & 将需要移动的节点移动到指定位置
+        (tag as string),
+        reconcileProps(chip, wormhole, chipRoot),
+        wormhole.elm, // 此时新 chip 还未 commit 到 dom，因此获取不到实际的 element 元素
+        null,
+        chip,
+        null,
+        null,
         (context: Chip, elm: Element) => {
           // render payload 执行完毕后触发，为当前 chip 上下文挂载对应的 dom 节点
           context.elm = elm
@@ -1449,14 +1468,13 @@ export function reconcileToGenRenderPayload(
     // 到 dom 上
     cacheRenderPayload(
       createRenderPayloadNode(
-        null,
-        null,
-        null,
         // 更新节点属性 & 将节点挂载到指定位置
         RenderUpdateTypes.PATCH_PROP | RenderUpdateTypes.MOUNT,
-        chip,
         (tag as string),
-        props
+        props,
+        null,
+        null,
+        chip
       ),
       renderPayloads
     )
@@ -1478,10 +1496,11 @@ export function genRenderPayloadsForDeletions(
     const elm = deletion.elm
     cacheRenderPayload(
       createRenderPayloadNode(
+        RenderUpdateTypes.UNMOUNT,
+        null,
+        null,
         elm,
         domOptions.parentNode(elm),
-        null,
-        RenderUpdateTypes.UNMOUNT,
         deletion
       ),
       renderPayloads

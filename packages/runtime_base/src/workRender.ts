@@ -434,7 +434,7 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
  */
 export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): void {
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
-  const parentElm: Element = getAncestorContainer(chip)
+  const parentElm: Element = getInsertableChip(chip)?.elm
   const elm = chip.elm
   // TODO 节点挂载顺序为从后向前，因此需指定当前 element 挂载的锚点
   if (parentElm && elm) {
@@ -766,14 +766,13 @@ export function performReconcileSync(
 }
 
 /**
- * 获取传入 chip 节点对应的可插入祖先 dom 容器
+ * 获取传入 chip 节点对应的可插入祖先 dom 容器对应的 chip 上下文
  * @param chip 
  */
-export function getAncestorContainer(chip: Chip): Element {
+export function getInsertableChip(chip: Chip): Chip {
   for (let i = ancestors.length - 2; i >= 0; i--) {
-    const elm = ancestors[i]?.elm
-    if (elm) {
-      return elm
+    if (chip.chipType === ChipTypes.NATIVE_DOM) {
+      return ancestors[i]
     }
   }
 
@@ -1418,8 +1417,8 @@ export function hasDeletions(chip: Chip): boolean {
 /**
  * 新旧 chip (仅 chip 节点本身) diff 生成更新描述
  * 配对方式有以下几种:
- * · 类型、key 均相同的相似节点 (属性更新)
- * · 旧节点为 null，新节点为有效节点 (挂载新节点)
+ * · 类型、key 均相同的相似节点 (待更新属性 | 待移动位置)
+ * · 旧节点为 null，新节点为有效节点 (待挂载新节点)
  * @param chip 
  * @param chipRoot 
  */
@@ -1466,6 +1465,7 @@ export function reconcileToGenRenderPayload(
     // 已创建生成 dom 容器的 render payload，因此 bubble 阶段需要
     // 完成节点属性的 patch 、节点的挂载，这样才能完整将新的节点挂载
     // 到 dom 上
+    const ancestor: Chip = getInsertableChip(chip)
     cacheRenderPayload(
       createRenderPayloadNode(
         // 更新节点属性 & 将节点挂载到指定位置
@@ -1474,7 +1474,9 @@ export function reconcileToGenRenderPayload(
         props,
         null,
         null,
-        chip
+        chip,
+        ancestor.wormhole || ancestor,
+        ancestors[ancestors.length - 2].children[chip.position + 1]
       ),
       renderPayloads
     )

@@ -42,8 +42,8 @@ export function commitRenderPayload({
   container,
   parentContainer,
   context,
-  parentcontext,
-  anchorcontext,
+  parentContext,
+  anchorContext,
   callback
 }: RenderPayloadNode): void {
   const elm = container || context.elm
@@ -54,32 +54,25 @@ export function commitRenderPayload({
   }
 
   if (type & RenderUpdateTypes.MOUNT) {
-    const parent: Chip = context.parent
     commitMountMutation(
-      context.elm,
-      parent.elm || parent.wormhole.elm,
-      // TODO 锚点获取逻辑待优化
-      !isLastChildOfChip(context) ?
-        auxiliaryContext.elm :
-        null
+      elm,
+      parentContainer || parentContext.elm,
+      anchorContext.elm
     )
   }
 
   if (type & RenderUpdateTypes.UNMOUNT) {
     commitUnmountMutation(
       elm,
-      parentcontext.elm
+      domOptions.parentNode(elm)
     )
   }
 
   if (type & RenderUpdateTypes.MOVE) {
     commitMoveMutation(
-      container,
-      context.parent.wormhole.elm,
-      // TODO 锚点获取逻辑待优化
-      !isLastChildOfChip(context) ?
-        :
-        null
+      elm,
+      parentContainer || parentContext.elm,
+      anchorContext.elm
     )
   }
 

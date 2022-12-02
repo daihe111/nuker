@@ -4,7 +4,7 @@ import {
   isReservedTag,
   isReservedComponentTag
 } from './domOptions';
-import { isObject, isArray, isFunction, extend } from '../../share/src';
+import { isArray, isFunction, extend } from '../../share/src';
 import { RenderPayloadNode } from "./workRender";
 import { VirtualInstance, VirtualOptions } from "./virtualChip";
 import { ListAccessor } from "../../share/src/shareTypes";
@@ -73,12 +73,6 @@ export interface ChipEffectUnit {
 export interface IdleJobUnit {
   job: Function
   next: IdleJobUnit
-}
-
-export const enum ChipPhases {
-  PENDING = 0,
-  INITIALIZE = 1,
-  COMPLETE = 2
 }
 
 export type ChipUnit = Chip | Chip | null
@@ -201,7 +195,7 @@ export function getLastChipChild(children: ChipChildren): Chip {
  */
 export function isLastChildOfChip(target: Chip, chip: Chip): boolean {
   const children: ChipChildren = chip.children
-  return (children ? target === children[children.length - 1] : false)
+  return target === children[children.length - 1]
 }
 
 export function createChipRoot(root: Chip): ChipRoot {
@@ -243,23 +237,4 @@ export function createChip(
  */
 export function getPropLiteralValue(valueContainer: ChipPropValue): StaticValue {
   return isFunction(valueContainer) ? valueContainer.value : valueContainer
-}
-
-/**
- * 获取 chip 链表树中指向指定 chip 的 chip 节点
- * @param chip 
- */
-export function getPointerChip(chip: Chip): Chip {
-  const parent: Chip = chip.parent
-  if (isLastChildOfChip(chip)) {
-    return parent
-  } else {
-    const children = (parent.children as Chip[])
-    for (let i = 0; i < children.length; i++) {
-      if (children[i].prevSibling === chip) {
-        return children[i]
-      }
-    }
-    return null
-  }
 }

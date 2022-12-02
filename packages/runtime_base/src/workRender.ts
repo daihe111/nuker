@@ -1,27 +1,23 @@
 import {
   Chip,
   ChipRoot,
-  ChipPhases,
   ChipChildren,
   ChipTypes,
-  ChipFlags,
-  cloneChip,
   ChipProps,
   getLastChipChild,
   DynamicValueGetter,
   StaticValue,
   getPropLiteralValue,
-  getPointerChip,
   createChipRoot,
   createChip,
   isSameChip,
   ChipKey,
-  IdleJobUnit
+  IdleJobUnit,
+  isLastChildOfChip
 } from "./chip";
 import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ, deleteProperty, hasOwn, NOOP, createListAccessor } from "../../share/src";
 import {
-  registerJob,
-  initScheduler
+  registerJob
 } from "./scheduler";
 import { ComponentInstance, Component, createComponentInstance, mountComponentChildren, getComponentChildren } from "./component";
 import { domOptions } from "./domOptions";
@@ -33,12 +29,11 @@ import { pushRenderEffectToBuffer, RenderEffectTypes, initRenderEffectBuffer } f
 import {
   cacheIdleJob,
   performIdleWork,
-  teardownChipCache,
   teardownAbandonedEffects,
   teardownDeletions,
   updateChipContext
 } from "./idle";
-import { invokeLifecycle, LifecycleHooks, HookInvokingStrategies, registerLifecycleHook } from "./lifecycle";
+import { invokeLifecycle, LifecycleHooks, registerLifecycleHook } from "./lifecycle";
 import { currentEventPriority } from "../../runtime_dom/src/event";
 import { ListAccessor } from "../../share/src/shareTypes";
 
@@ -69,11 +64,8 @@ export interface NukerRenderOptions {
 }
 
 export interface RenderPayloadNode {
-  // flags
-  [RenderFlags.IS_RENDER_PAYLOAD]: true
-
   // data
-  type: number
+  action: number
   container?: Element
   parentContainer?: Element
   tag?: string
@@ -273,7 +265,7 @@ export function performChipWork(
 ): ChipTraversePointer {
   if (phase) {
     // 回溯遍历阶段
-    return completeChip(chipRoot, chip, callback)
+    return completeRenderWorkForChip(chipRoot, chip, callback)
   } else {
     // 深度遍历阶段
     const { getChildren, onInitRender } = renderInstrumentations[chip.chipType]
@@ -316,20 +308,19 @@ export function initRenderWorkForChip(
     }
   } else {
     // 无更深层级的子节点，处理当前节点的渲染工作
-    return completeChip(chipRoot, chip, onCompleted)
+    return completeRenderWorkForChip(chipRoot, chip, onCompleted)
   }
 }
 
 /**
  * chip 是叶子节点或者回溯阶段的节点，完成该节点的全部渲染工作
  * 返回下一个要处理的 chip 节点
- * 同级兄弟节点的处理顺序为从尾到头，以保证靠近尾部的节点优先渲染，渲染
- * 靠近头部的节点时可以获取到后面节点的 dom 作为锚点
+ * 同级兄弟节点的处理顺序为从头到尾，因为首次挂载不需要锚点，appendChild 只需要父节点
  * @param chipRoot 
  * @param chip 
  * @param callback 
  */
-export function completeChip(
+export function completeRenderWorkForChip(
   chipRoot: ChipRoot,
   chip: Chip,
   callback?: (chip: Chip) => void
@@ -343,19 +334,20 @@ export function completeChip(
   ancestors.pop();
 
   // 计算下一个需要处理的节点
-  if (chip.position === 0) {
+  const parent: Chip = ancestors[ancestors.length - 1]
+  if (isLastChildOfChip(chip, parent)) {
     // 同级子节点已全部处理完毕，准备向父级回溯
     return {
-      next: ancestors[ancestors.length - 1],
+      next: parent,
       phase: true
     }
   } else {
     // 存在同级兄弟节点，继续深度遍历此兄弟节点
-    const prevPosition: number = chip.position - 1
-    const prevChip: Chip = ancestors[ancestors.length - 1].children[prevPosition]
-    prevChip.position = prevPosition
+    const nextPosition: number = chip.position + 1
+    const nextChip: Chip = parent.children[nextPosition]
+    nextChip.position = nextPosition
     return {
-      next: prevChip,
+      next: nextChip,
       phase: false
     }
   }
@@ -436,7 +428,6 @@ export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): vo
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
   const parentElm: Element = getInsertableChip(chip)?.elm
   const elm = chip.elm
-  // TODO 节点挂载顺序为从后向前，因此需指定当前 element 挂载的锚点
   if (parentElm && elm) {
     domOptions.appendChild(elm, parentElm)
   }
@@ -814,7 +805,7 @@ export function cacheEffectToChip(effect: Effect, chip: Chip): Effect {
  * @param callback 
  */
 export function createRenderPayloadNode(
-  type: number,
+  action: number,
   tag: string,
   props: Record<string | number | symbol, any>,
   container: Element,
@@ -825,9 +816,8 @@ export function createRenderPayloadNode(
   callback?: Function
 ): RenderPayloadNode {
   return {
-    [RenderFlags.IS_RENDER_PAYLOAD]: true,
     context,
-    type,
+    action,
     tag,
     props,
     next: null,

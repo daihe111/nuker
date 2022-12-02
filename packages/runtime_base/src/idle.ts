@@ -12,7 +12,7 @@
 import { Chip, ChipProps, ChipChildren, IdleJobUnit, ChipRoot, ChipEffectUnit, ChipTypes } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend, isArray, addNodeToList } from "../../share/src";
-import { invokeLifecycle, LifecycleHooks } from "./lifecycle";
+import { LifecycleHooks } from "./lifecycle";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { unregisterJob } from "./scheduler";
 

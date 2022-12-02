@@ -1,7 +1,5 @@
 import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
 import { domOptions } from "./domOptions";
-import { Chip, ChipRoot, isLastChildOfChip } from "./chip";
-import { performIdleWork } from "./idle";
 import { isFunction } from "../../share/src";
 
 // 待删除 prop 的占位标志位
@@ -36,7 +34,7 @@ export function performCommitWork(renderPayloads: RenderPayloadNode): null {
  * @param renderPayload 
  */
 export function commitRenderPayload({
-  type,
+  action,
   tag,
   props,
   container,
@@ -48,12 +46,12 @@ export function commitRenderPayload({
 }: RenderPayloadNode): void {
   const elm = container || context.elm
 
-  if (type & RenderUpdateTypes.PATCH_PROP) {
+  if (action & RenderUpdateTypes.PATCH_PROP) {
     // commit 属性到 dom
     commitProps(elm, props)
   }
 
-  if (type & RenderUpdateTypes.MOUNT) {
+  if (action & RenderUpdateTypes.MOUNT) {
     commitMountMutation(
       elm,
       parentContainer || parentContext.elm,
@@ -61,14 +59,14 @@ export function commitRenderPayload({
     )
   }
 
-  if (type & RenderUpdateTypes.UNMOUNT) {
+  if (action & RenderUpdateTypes.UNMOUNT) {
     commitUnmountMutation(
       elm,
       domOptions.parentNode(elm)
     )
   }
 
-  if (type & RenderUpdateTypes.MOVE) {
+  if (action & RenderUpdateTypes.MOVE) {
     commitMoveMutation(
       elm,
       parentContainer || parentContext.elm,
@@ -76,7 +74,7 @@ export function commitRenderPayload({
     )
   }
 
-  if (type & RenderUpdateTypes.CREATE_ELEMENT) {
+  if (action & RenderUpdateTypes.CREATE_ELEMENT) {
     commitNewElement(tag)
   }
 

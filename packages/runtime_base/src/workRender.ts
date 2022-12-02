@@ -771,6 +771,20 @@ export function getInsertableChip(chip: Chip): Chip {
 }
 
 /**
+ * 计算可作为锚点的 chip 上下文
+ * @param chip 
+ * @param parentChip 
+ */
+export function getAnchorChip(chip: Chip, parentChip: Chip): Chip {
+  let anchor: Chip = parentChip.children[chip.position + 1]
+  while (anchor.chipType !== ChipTypes.NATIVE_DOM) {
+    anchor = anchor.children[0]
+  }
+
+  return anchor
+}
+
+/**
  * 将 effect 缓存至 chip 上下文中
  * @param effect 
  * @param chip 
@@ -1032,6 +1046,7 @@ export function completeReconcile(
   renderPayloads: ListAccessor<RenderPayloadNode>,
   idleJobs: ListAccessor<IdleJobUnit>
 ): ChipTraversePointer {
+  const parent: Chip = ancestors[ancestors.length - 2]
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
   if (!chip.selfSkipable && !chip.skipable) {
     // 优先处理子节点事务，根据收集的待删除子节点生成对应的 render payload
@@ -1039,17 +1054,16 @@ export function completeReconcile(
       genRenderPayloadsForDeletions(chip.deletions, renderPayloads, idleJobs)
     }
     // 生成当前节点 diff 的 render payload 并入队
-    reconcileToGenRenderPayload(chip, chipRoot, renderPayloads)
+    reconcileToGenRenderPayload(chip, parentChip, chipRoot, renderPayloads)
     completeReconcileForChip(chip, chipRoot)
   }
 
   // 当前节点 reconcile 完毕，出栈
   ancestors.pop()
-  const parent: Chip = ancestors[ancestors.length - 1]
-  const prevIndex: number = chip.position - 1
-  const prevSibling: Chip = parent.children[prevIndex]
 
   // 获取下一组需要处理的 chip 节点对
+  const prevIndex: number = chip.position - 1
+  const prevSibling: Chip = parent.children[prevIndex]
   if (prevSibling) {
     // 标记节点在同级节点序列中的索引
     prevSibling.position = prevIndex
@@ -1414,6 +1428,7 @@ export function hasDeletions(chip: Chip): boolean {
  */
 export function reconcileToGenRenderPayload(
   chip: Chip,
+  parentChip: Chip,
   chipRoot: ChipRoot,
   renderPayloads: ListAccessor<RenderPayloadNode>
 ): void {
@@ -1429,7 +1444,7 @@ export function reconcileToGenRenderPayload(
         domOptions.parentNode(wormhole.elm), // 移动节点所需父容器节点
         chip,
         null,
-        ancestors[ancestors.length - 2].children[chip.position + 1], // 当前 chip 节点的后一个兄弟节点作为移动插入锚点
+        getAnchorChip(chip, parentChip), // 当前 chip 节点的后一个兄弟节点作为移动插入锚点
         (context: Chip, elm: Element) => {
           // render payload 执行完毕后触发，为当前 chip 上下文挂载对应的 dom 节点
           context.elm = elm
@@ -1466,7 +1481,7 @@ export function reconcileToGenRenderPayload(
         null,
         chip,
         ancestor.wormhole || ancestor,
-        ancestors[ancestors.length - 2].children[chip.position + 1]
+        getAnchorChip(chip, parentChip)
       ),
       renderPayloads
     )

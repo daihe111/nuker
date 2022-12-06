@@ -265,11 +265,11 @@ export function performChipWork(
 ): ChipTraversePointer {
   if (phase) {
     // 回溯遍历阶段
-    return completeRenderWorkForChip(chipRoot, chip, callback)
+    return completeRenderWork(chipRoot, chip, callback)
   } else {
     // 深度遍历阶段
     const { getChildren, onInitRender } = renderInstrumentations[chip.chipType]
-    return initRenderWorkForChip(
+    return initRenderWork(
       chip,
       chipRoot,
       getChildren,
@@ -284,7 +284,7 @@ export function performChipWork(
  * @param chip 
  * @param chipRoot 
  */
-export function initRenderWorkForChip(
+export function initRenderWork(
   chip: Chip,
   chipRoot: ChipRoot,
   getChildren: (chip: Chip) => ChipChildren,
@@ -293,6 +293,8 @@ export function initRenderWorkForChip(
 ): ChipTraversePointer {
   // 祖先节点入栈
   ancestors.push(chip)
+
+  initRenderWorkForChip(chip, chipRoot)
 
   let lastChild: Chip
   let lastIndex: number
@@ -308,7 +310,7 @@ export function initRenderWorkForChip(
     }
   } else {
     // 无更深层级的子节点，处理当前节点的渲染工作
-    return completeRenderWorkForChip(chipRoot, chip, onCompleted)
+    return completeRenderWork(chipRoot, chip, onCompleted)
   }
 }
 
@@ -320,12 +322,12 @@ export function initRenderWorkForChip(
  * @param chip 
  * @param callback 
  */
-export function completeRenderWorkForChip(
+export function completeRenderWork(
   chipRoot: ChipRoot,
   chip: Chip,
   callback?: (chip: Chip) => void
 ): ChipTraversePointer {
-  completeRenderWork(chipRoot, chip)
+  completeRenderWorkForChip(chipRoot, chip)
 
   if (isFunction(callback)) {
     callback(chip)
@@ -353,11 +355,33 @@ export function completeRenderWorkForChip(
   }
 }
 
+export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot) {
+  switch (chip.chipType) {
+    case ChipTypes.CUSTOM_COMPONENT:
+      initRenderWorkForComponent(chip)
+      break
+    case ChipTypes.RESERVED_COMPONENT:
+      initRenderWorkForReservedComponent(chip)
+      break
+    case ChipTypes.NATIVE_DOM:
+      initRenderWorkForElement(chip)
+      break
+    case ChipTypes.CONDITION:
+      initRenderWorkForConditionChip(chip, chipRoot)
+    case ChipTypes.FRAGMENT:
+      initRenderWorkForIterableChip(chip, chipRoot)
+      break
+  }
+}
+
 /**
  * 初始化 component 类型节点的渲染工作
  * @param chip 
  */
 export function initRenderWorkForComponent(chip: Chip): void {
+  const parent: Chip = ancestors[ancestors.length - 2]
+  chip.elm = parent?.elm
+
   const instance: ComponentInstance = createComponentInstance((chip.tag as Component), chip)
   const { source, render } = chip.instance = instance
   // 执行组件的 init 生命周期，此时只能访问到组件实例
@@ -376,7 +400,8 @@ export function initRenderWorkForComponent(chip: Chip): void {
  * @param chip 
  */
 export function initRenderWorkForReservedComponent(chip: Chip): void {
-
+  const parent: Chip = ancestors[ancestors.length - 2]
+  chip.elm = parent?.elm
 }
 
 /**
@@ -398,6 +423,9 @@ export function initRenderWorkForElement(chip: Chip): void {
  * @param chipRoot 
  */
 export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): void {
+  const parent: Chip = ancestors[ancestors.length - 2]
+  chip.elm = parent?.elm
+
   initConditionChip(chip, chipRoot)
 }
 
@@ -416,6 +444,9 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
  * @param chipRoot 
  */
 export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): void {
+  const parent: Chip = ancestors[ancestors.length - 2]
+  chip.elm = parent?.elm
+
   initIterableChip(chip, chipRoot)
 }
 
@@ -426,7 +457,7 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
  */
 export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): void {
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
-  const parentElm: Element = getInsertableChip(chip)?.elm
+  const parentElm: Element = ancestors[ancestors.length - 2].elm
   const elm = chip.elm
   if (parentElm && elm) {
     domOptions.appendChild(elm, parentElm)
@@ -478,7 +509,7 @@ export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot): 
  * @param chipRoot 
  * @param chip 
  */
-export function completeRenderWork(chipRoot: ChipRoot, chip: Chip): void {
+export function completeRenderWorkForChip(chipRoot: ChipRoot, chip: Chip): void {
   switch (chip.chipType) {
     case ChipTypes.NATIVE_DOM:
       completeRenderWorkForElement(chip, chipRoot)
@@ -1054,7 +1085,7 @@ export function completeReconcile(
       genRenderPayloadsForDeletions(chip.deletions, renderPayloads, idleJobs)
     }
     // 生成当前节点 diff 的 render payload 并入队
-    reconcileToGenRenderPayload(chip, parentChip, chipRoot, renderPayloads)
+    reconcileToGenRenderPayload(chip, parent, chipRoot, renderPayloads)
     completeReconcileForChip(chip, chipRoot)
   }
 

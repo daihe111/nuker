@@ -176,10 +176,6 @@ export function mountComponentChildren(chip: Chip): void {
  * @param chip 
  */
 export function getComponentChildren(chip: Chip): ChipChildren {
-  const { children, render, source } = chip.instance
-  return children ?
-    children :
-    (render ?
-      render(source) :
-      null)
+  const { render, source, children } = chip.instance
+  return children ? children : render(source)
 }

@@ -44,7 +44,7 @@ export interface ReconcileChipPair {
   newChip: Chip | null
 }
 
-export interface DynamicRenderData {
+export interface RenderMaterial {
   props?: Record<string | number | symbol, any>
   children?: ChipChildren
 }
@@ -118,7 +118,6 @@ export const enum NukerRenderModes {
 export const renderInstrumentations = {
   // 原生节点
   [ChipTypes.NATIVE_DOM]: {
-    getChildren: (chip: Chip) => (chip.children),
     onInitRender: initRenderWorkForElement,
     onCompleteRender: completeRenderWorkForElement,
     onInitReconcile: initReconcileForElement,
@@ -126,7 +125,6 @@ export const renderInstrumentations = {
   },
   // 自定义组件
   [ChipTypes.CUSTOM_COMPONENT]: {
-    getChildren: getComponentChildren,
     onInitRender: initRenderWorkForComponent,
     onCompleteRender: completeRenderWorkForComponent,
     onInitReconcile: initReconcileForComponent,
@@ -134,7 +132,6 @@ export const renderInstrumentations = {
   },
   // 内部组件
   [ChipTypes.RESERVED_COMPONENT]: {
-    getChildren: getComponentChildren,
     onInitRender: initRenderWorkForComponent,
     onCompleteRender: completeRenderWorkForComponent,
     onInitReconcile: initReconcileForComponent,
@@ -142,7 +139,6 @@ export const renderInstrumentations = {
   },
   // 条件虚拟容器节点
   [ChipTypes.CONDITION]: {
-    getChildren: getVirtualChildren,
     onInitRender: initRenderWorkForConditionChip,
     onCompleteRender: completeRenderWorkForConditionChip,
     onInitReconcile: initConditionChip,
@@ -150,7 +146,6 @@ export const renderInstrumentations = {
   },
   // 可迭代虚拟容器节点
   [ChipTypes.FRAGMENT]: {
-    getChildren: getVirtualChildren,
     onInitRender: initRenderWorkForIterableChip,
     onCompleteRender: completeRenderWorkForIterableChip,
     onInitReconcile: initIterableChip,
@@ -160,7 +155,6 @@ export const renderInstrumentations = {
 
 export let currentRenderingInstance: ComponentInstance | VirtualInstance = null // 当前正在执行渲染工作的组件 instance
 export let renderMode: number = NukerRenderModes.TIME_SPLICING // 框架的渲染模式
-const ancestors: Chip[] = [] // 祖先节点栈
 
 /**
  * nuker 框架渲染总入口方法
@@ -268,12 +262,10 @@ export function performChipWork(
     return completeRenderWork(chipRoot, chip, callback)
   } else {
     // 深度遍历阶段
-    const { getChildren, onInitRender } = renderInstrumentations[chip.chipType]
     return initRenderWork(
       chip,
       chipRoot,
-      getChildren,
-      onInitRender,
+      renderInstrumentations[chip.chipType].onInitRender,
       callback
     )
   }
@@ -287,26 +279,25 @@ export function performChipWork(
 export function initRenderWork(
   chip: Chip,
   chipRoot: ChipRoot,
-  getChildren: (chip: Chip) => ChipChildren,
   onInitRender: (chip: Chip, chipRoot: ChipRoot) => void,
   onCompleted: (chip: Chip) => void
 ): ChipTraversePointer {
-  // 祖先节点入栈
-  ancestors.push(chip)
+  // 当前节点需要做的预处理工作
+  onInitRender(chip, chipRoot)
 
-  initRenderWorkForChip(chip, chipRoot)
-
-  let lastChild: Chip
-  let lastIndex: number
-  const children: ChipChildren = getChildren(chip)
-  if (children && (lastChild = children[lastIndex = children.length - 1])) {
-    // 存在更深层级的子节点需优先处理，当前节点只做预处理工作
-    onInitRender(chip, chipRoot)
-    // 记录下一节点在子节点序列中的索引位置
-    lastChild.position = lastIndex
-    return {
-      next: lastChild,
-      phase: false
+  const children: ChipChildren = chip.children
+  if (children) {
+    // 存在更深层级的子节点需优先处理，
+    const firstChild: Chip = children[0]
+    if (firstChild) {
+      // 创建父子关系
+      firstChild.parent = chip
+      // 记录下一节点在子节点序列中的索引位置
+      firstChild.position = 0
+      return {
+        next: firstChild,
+        phase: false
+      }
     }
   } else {
     // 无更深层级的子节点，处理当前节点的渲染工作
@@ -333,10 +324,8 @@ export function completeRenderWork(
     callback(chip)
   }
 
-  ancestors.pop();
-
   // 计算下一个需要处理的节点
-  const parent: Chip = ancestors[ancestors.length - 1]
+  const parent: Chip = chip.parent
   if (isLastChildOfChip(chip, parent)) {
     // 同级子节点已全部处理完毕，准备向父级回溯
     return {
@@ -348,29 +337,11 @@ export function completeRenderWork(
     const nextPosition: number = chip.position + 1
     const nextChip: Chip = parent.children[nextPosition]
     nextChip.position = nextPosition
+    nextChip.parent = parent
     return {
       next: nextChip,
       phase: false
     }
-  }
-}
-
-export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot) {
-  switch (chip.chipType) {
-    case ChipTypes.CUSTOM_COMPONENT:
-      initRenderWorkForComponent(chip)
-      break
-    case ChipTypes.RESERVED_COMPONENT:
-      initRenderWorkForReservedComponent(chip)
-      break
-    case ChipTypes.NATIVE_DOM:
-      initRenderWorkForElement(chip)
-      break
-    case ChipTypes.CONDITION:
-      initRenderWorkForConditionChip(chip, chipRoot)
-    case ChipTypes.FRAGMENT:
-      initRenderWorkForIterableChip(chip, chipRoot)
-      break
   }
 }
 
@@ -379,16 +350,17 @@ export function initRenderWorkForChip(chip: Chip, chipRoot: ChipRoot) {
  * @param chip 
  */
 export function initRenderWorkForComponent(chip: Chip): void {
-  const parent: Chip = ancestors[ancestors.length - 2]
+  // 继承实体 dom 元素
+  const parent: Chip = chip.parent
   chip.elm = parent?.elm
 
-  const instance: ComponentInstance = createComponentInstance((chip.tag as Component), chip)
-  const { source, render } = chip.instance = instance
+  const instance: ComponentInstance = chip.instance = createComponentInstance((chip.tag as Component), chip)
   // 执行组件的 init 生命周期，此时只能访问到组件实例
   invokeLifecycle(LifecycleHooks.INIT, instance)
   // 此处仅通过 render 渲染器获取组件节点的子节点，不做响应式系统的依赖收集
   disableCollecting()
-  chip.children = render(source)
+  // 为组件节点挂载子节点
+  mountComponentChildren(chip)
   // 恢复响应式系统的依赖收集
   enableCollecting()
   // 触发 willMount 生命周期，此刻为执行组件渲染挂载工作前的最后时机
@@ -400,8 +372,11 @@ export function initRenderWorkForComponent(chip: Chip): void {
  * @param chip 
  */
 export function initRenderWorkForReservedComponent(chip: Chip): void {
-  const parent: Chip = ancestors[ancestors.length - 2]
+  // 继承实体 dom 元素
+  const parent: Chip = chip.parent
   chip.elm = parent?.elm
+
+  mountComponentChildren(chip)
 }
 
 /**
@@ -423,7 +398,8 @@ export function initRenderWorkForElement(chip: Chip): void {
  * @param chipRoot 
  */
 export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): void {
-  const parent: Chip = ancestors[ancestors.length - 2]
+  // 继承实体 dom 元素
+  const parent: Chip = chip.parent
   chip.elm = parent?.elm
 
   initConditionChip(chip, chipRoot)
@@ -444,7 +420,8 @@ export function initRenderWorkForConditionChip(chip: Chip, chipRoot: ChipRoot): 
  * @param chipRoot 
  */
 export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): void {
-  const parent: Chip = ancestors[ancestors.length - 2]
+  // 继承实体 dom 元素
+  const parent: Chip = chip.parent
   chip.elm = parent?.elm
 
   initIterableChip(chip, chipRoot)
@@ -457,7 +434,7 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
  */
 export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): void {
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
-  const parentElm: Element = ancestors[ancestors.length - 2].elm
+  const parentElm: Element = chip.parent?.elm
   const elm = chip.elm
   if (parentElm && elm) {
     domOptions.appendChild(elm, parentElm)
@@ -587,16 +564,16 @@ export function createRenderEffectForProp(
   value: DynamicValueGetter
 ): StaticValue {
   let literal: StaticValue
-  const e = effect<DynamicRenderData>(() => {
+  const e = effect<RenderMaterial>(() => {
     // collector: 触发当前注册 effect 的收集行为
     // 执行动态属性取值器获取属性字面量
     literal = value()
     setLiteralForDynamicValue(literal, value)
     return { props: { [propName]: literal } }
-  }, (newData: DynamicRenderData) => {
+  }, (material: RenderMaterial) => {
     // dispatcher: 响应式数据更新后触发
     // 使用最新的渲染数据直接同步刷新视图
-    return patchMutationSync(chip, newData.props)
+    return patchMutationSync(chip, material.props)
   }, {
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
@@ -620,12 +597,12 @@ export function createRenderEffectForConditionChip(
   chipRoot: ChipRoot,
   render: VirtualChipRender
 ): Effect {
-  const e = effect<DynamicRenderData>(() => {
+  const e = effect<RenderMaterial>(() => {
     const children: ChipChildren = (render() as ChipChildren)
     chip.children = children
     return { children }
-  }, (newData: DynamicRenderData) => {
-    return handleChildJobOfRenderEffect(chip, chipRoot, newData)
+  }, (material: RenderMaterial) => {
+    return handleChildJobOfRenderEffect(chip, chipRoot, material)
   }, {
     lazy: true,
     collectWhenLazy: true,
@@ -650,7 +627,7 @@ export function createRenderEffectForIterableChip(
   render: VirtualChipRender,
   sourceGetter: DynamicValueGetter
 ): void {
-  const e = effect<DynamicRenderData>(() => {
+  const e = effect<RenderMaterial>(() => {
     const children: Chip[] = []
     const sourceLiteral: object = sourceGetter()
     setLiteralForDynamicValue(sourceLiteral, sourceGetter)
@@ -663,8 +640,8 @@ export function createRenderEffectForIterableChip(
     }
     chip.children = children
     return { children }
-  }, (newData: DynamicRenderData) => {
-    return handleChildJobOfRenderEffect(chip, chipRoot, newData)
+  }, (material: RenderMaterial) => {
+    return handleChildJobOfRenderEffect(chip, chipRoot, material)
   }, {
     lazy: true,
     collectWhenLazy: true, // 首次仅做依赖收集但不执行派发逻辑
@@ -703,18 +680,18 @@ export function renderEffectScheduler(effect: Effect): void {
  * 处理渲染副作用的子任务
  * @param chip 
  * @param chipRoot 
- * @param newData 
+ * @param material 
  */
 export function handleChildJobOfRenderEffect(
   chip: Chip,
   chipRoot: ChipRoot,
-  newData: DynamicRenderData
+  material: RenderMaterial
 ): Function | void {
   // 新旧 children 进行 reconcile
   const job: Function = genReconcileJob(
     chip,
     chipRoot,
-    newData
+    material
   )
   switch (renderMode) {
     case NukerRenderModes.TIME_SPLICING:
@@ -724,7 +701,7 @@ export function handleChildJobOfRenderEffect(
       return job
     case NukerRenderModes.BATCH_SYNC:
     default:
-      return performReconcileSync(chip, chipRoot, newData)
+      return performReconcileSync(chip, chipRoot, material)
   }
 }
 
@@ -737,7 +714,7 @@ export function handleChildJobOfRenderEffect(
 export function performReconcileSync(
   chip: Chip,
   chipRoot: ChipRoot,
-  { children }: DynamicRenderData
+  { children }: RenderMaterial
 ): void {
   const ancestor: Chip = chip
   const renderPayloads: ListAccessor<RenderPayloadNode> = createListAccessor()
@@ -785,20 +762,6 @@ export function performReconcileSync(
     performCommitWork(renderPayloads.first)
     performIdleWork(idleJobs.first)
   }
-}
-
-/**
- * 获取传入 chip 节点对应的可插入祖先 dom 容器对应的 chip 上下文
- * @param chip 
- */
-export function getInsertableChip(chip: Chip): Chip {
-  for (let i = ancestors.length - 2; i >= 0; i--) {
-    if (chip.chipType === ChipTypes.NATIVE_DOM) {
-      return ancestors[i]
-    }
-  }
-
-  return null
 }
 
 /**
@@ -884,7 +847,7 @@ export function createRenderPayloadNode(
 export function genReconcileJob(
   chip: Chip,
   chipRoot: ChipRoot,
-  { children }: DynamicRenderData
+  { children }: RenderMaterial
 ): Function {
   // 声明 reconcile 任务自身的缓存信息，此缓存信息会被子任务闭包使用，因此在当前
   // reconcile 任务被打断作废后，须及时释放对应的闭包的引用。
@@ -1031,9 +994,6 @@ export function initReconcile(
   renderPayloads: ListAccessor<RenderPayloadNode>,
   idleJobs: ListAccessor<IdleJobUnit>
 ): ChipTraversePointer {
-  // 祖先节点入栈
-  ancestors.push(chip)
-
   // 首次遍历 chip 节点时判断该节点是否为可跳过 diff 的静态节点，
   // 如果可跳过，则不再对该 chip 做深度遍历，直接跳至下一个待处理 chip
   if (isChipSkipable(chip)) {
@@ -1077,7 +1037,7 @@ export function completeReconcile(
   renderPayloads: ListAccessor<RenderPayloadNode>,
   idleJobs: ListAccessor<IdleJobUnit>
 ): ChipTraversePointer {
-  const parent: Chip = ancestors[ancestors.length - 2]
+  const parent: Chip = chip.parent
   // 如果 chip 节点不跳过，则 diff 出更新描述 render payload
   if (!chip.selfSkipable && !chip.skipable) {
     // 优先处理子节点事务，根据收集的待删除子节点生成对应的 render payload
@@ -1088,9 +1048,6 @@ export function completeReconcile(
     reconcileToGenRenderPayload(chip, parent, chipRoot, renderPayloads)
     completeReconcileForChip(chip, chipRoot)
   }
-
-  // 当前节点 reconcile 完毕，出栈
-  ancestors.pop()
 
   // 获取下一组需要处理的 chip 节点对
   const prevIndex: number = chip.position - 1
@@ -1501,7 +1458,6 @@ export function reconcileToGenRenderPayload(
     // 已创建生成 dom 容器的 render payload，因此 bubble 阶段需要
     // 完成节点属性的 patch 、节点的挂载，这样才能完整将新的节点挂载
     // 到 dom 上
-    const ancestor: Chip = getInsertableChip(chip)
     cacheRenderPayload(
       createRenderPayloadNode(
         // 更新节点属性 & 将节点挂载到指定位置
@@ -1511,7 +1467,7 @@ export function reconcileToGenRenderPayload(
         null,
         null,
         chip,
-        ancestor.wormhole || ancestor,
+        parentChip.wormhole || parentChip,
         getAnchorChip(chip, parentChip)
       ),
       renderPayloads

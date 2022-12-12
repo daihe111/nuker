@@ -41,6 +41,7 @@ export interface ChipCore {
   isSVG?: boolean
   is?: boolean
   children?: ChipChildren
+  parent?: Chip
 }
 
 export const enum ChipTypes {

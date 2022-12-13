@@ -1010,11 +1010,14 @@ export function initReconcile(
     }
 
     // 新旧子节点序列建立关联关系
-    connectChipChildren(chip.wormhole?.children, chip.children, chip)
-    const lastChild = getLastChipChild(chip.children)
+    const children: ChipChildren = chip.children
+    connectChipChildren(chip.wormhole?.children, children, chip)
+    const lastChild = getLastChipChild(children)
     if (lastChild) {
       // 标记节点在同级节点序列中的索引
-      lastChild.position = chip.children.length - 1
+      lastChild.position = children.length - 1
+      // 创建父子关系
+      lastChild.parent = chip
       return {
         next: lastChild,
         phase: false
@@ -1055,6 +1058,8 @@ export function completeReconcile(
   if (prevSibling) {
     // 标记节点在同级节点序列中的索引
     prevSibling.position = prevIndex
+    // 创建父子关系
+    prevSibling.parent = parent
     return {
       next: prevSibling,
       phase: false

@@ -4,7 +4,7 @@ export type VirtualChipRender = (source?: any, sourceKey?: any) => ChipChildren 
 
 export interface VirtualOptions {
   sourceGetter: DynamicValueGetter
-  render: VirtualChipRender
+  render: VirtualChipRender // compile 阶段根据模板结构生成对应的 render 函数
 }
 
 export interface VirtualInstance {

@@ -262,12 +262,7 @@ export function performChipWork(
     return completeRenderWork(chipRoot, chip, callback)
   } else {
     // 深度遍历阶段
-    return initRenderWork(
-      chip,
-      chipRoot,
-      renderInstrumentations[chip.chipType].onInitRender,
-      callback
-    )
+    return initRenderWork(chip, chipRoot, callback)
   }
 }
 
@@ -279,11 +274,10 @@ export function performChipWork(
 export function initRenderWork(
   chip: Chip,
   chipRoot: ChipRoot,
-  onInitRender: (chip: Chip, chipRoot: ChipRoot) => void,
   onCompleted: (chip: Chip) => void
 ): ChipTraversePointer {
   // 当前节点需要做的预处理工作
-  onInitRender(chip, chipRoot)
+  renderInstrumentations[chip.chipType].onInitRender(chip, chipRoot)
 
   const children: ChipChildren = chip.children
   if (children) {
@@ -318,7 +312,8 @@ export function completeRenderWork(
   chip: Chip,
   callback?: (chip: Chip) => void
 ): ChipTraversePointer {
-  completeRenderWorkForChip(chipRoot, chip)
+  // 对应类型节点完成渲染工作
+  renderInstrumentations[chip.chipType].onCompleteRender(chip, chipRoot)
 
   if (isFunction(callback)) {
     callback(chip)
@@ -1006,7 +1001,20 @@ export function initReconcile(
       chip.selfSkipable = true
     } else {
       // chip 节点不可跳过 reconcile
-      initReconcileForChip(chip, chipRoot, renderPayloads, idleJobs)
+      renderInstrumentations[chip.chipType].onInitReconcile(
+        chip,
+        chipRoot,
+        renderPayloads,
+        idleJobs
+      )
+
+      // 卸载当前 chip 对应的旧 chip (相似节点) 上的 effects，当前
+      // chip 初始化时会重新对新的动态数据进行渲染副作用收集
+      if (chip.wormhole) {
+        cacheIdleJob(() => {
+          teardownAbandonedEffects(chip.wormhole)
+        }, idleJobs)
+      }
     }
 
     // 新旧子节点序列建立关联关系
@@ -1049,7 +1057,11 @@ export function completeReconcile(
     }
     // 生成当前节点 diff 的 render payload 并入队
     reconcileToGenRenderPayload(chip, parent, chipRoot, renderPayloads)
-    completeReconcileForChip(chip, chipRoot)
+    // 指定类型节点完成 reconcile 工作
+    renderInstrumentations[chip.chipType].onCompleteReconcile(
+      chip,
+      chipRoot
+    )
   }
 
   // 获取下一组需要处理的 chip 节点对
@@ -1069,49 +1081,6 @@ export function completeReconcile(
       next: parent,
       phase: true
     }
-  }
-}
-
-/**
- * 协调过程中首次访问 chip 节点
- * 1. 完成自身的渲染初始化工作
- * 2. 建立新旧子代节点的映射关系，确定好子代节点的删除、移动
- * 3. 卸载旧的 chip 节点对应的 effects，因为重新执行 render
- *    函数会对新节点中的动态数据重新进行依赖收集
- * @param chip 
- * @param chipRoot 
- */
-export function initReconcileForChip(
-  chip: Chip,
-  chipRoot: ChipRoot,
-  renderPayloads: ListAccessor<RenderPayloadNode>,
-  idleJobs: ListAccessor<IdleJobUnit>
-): void {
-  const { chipType, wormhole } = chip
-  switch (chipType) {
-    case ChipTypes.NATIVE_DOM:
-      initReconcileForElement(chip, renderPayloads)
-      break
-    case ChipTypes.CONDITION:
-      // 条件节点
-      initConditionChip(chip, chipRoot)
-      break
-    case ChipTypes.FRAGMENT:
-      // 可迭代节点
-      initIterableChip(chip, chipRoot)
-      break
-    case ChipTypes.CUSTOM_COMPONENT:
-      // 组件类型节点
-      initReconcileForComponent(chip, chipRoot)
-      break
-  }
-
-  // 卸载当前 chip 对应的旧 chip (相似节点) 上的 effects，当前
-  // chip 初始化时会重新对新的动态数据进行渲染副作用收集
-  if (wormhole) {
-    cacheIdleJob(() => {
-      teardownAbandonedEffects(wormhole)
-    }, idleJobs)
   }
 }
 
@@ -1148,6 +1117,7 @@ export function initIterableChip(chip: Chip, chipRoot: ChipRoot): Chip {
  */
 export function initReconcileForElement(
   chip: Chip,
+  chipRoot: ChipRoot,
   renderPayloads: ListAccessor<RenderPayloadNode>
 ): void {
   if (!chip.wormhole) {
@@ -1195,21 +1165,6 @@ export function initReconcileForComponent(chip: Chip, chipRoot: ChipRoot): void 
     invokeLifecycle(LifecycleHooks.INIT, chip.instance)
     // 触发 willMount 生命周期
     invokeLifecycle(LifecycleHooks.WILL_MOUNT, chip.instance)
-  }
-}
-
-/**
- * 根据 chip 类型完成对应的回溯阶段协调工作
- * @param chip 
- * @param chipRoot 
- */
-export function completeReconcileForChip(chip: Chip, chipRoot: ChipRoot): void {
-  switch (chip.chipType) {
-    case ChipTypes.CUSTOM_COMPONENT:
-      completeReconcileForComponent(chip, chipRoot)
-      break
-    default:
-      break
   }
 }
 

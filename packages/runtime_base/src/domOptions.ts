@@ -67,6 +67,8 @@ export const domOptions = {
     return el
   },
 
+  createFragment: () => new DocumentFragment(),
+
   createText: text => doc.createTextNode(text),
 
   createComment: text => doc.createComment(text),

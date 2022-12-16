@@ -90,7 +90,7 @@ export interface Chip extends ChipCore {
   readonly id: number // 节点编号 id (自增)
   ref: ChipRef
   key?: ChipKey
-  elm: Element // 虚拟节点对应的实际 dom 容器
+  elm: Element | DocumentFragment // 虚拟节点对应的实际 dom 容器，继承父节点容器
   move?: true // 节点是否需要移动
   instance: ChipInstance
   directives?: unknown

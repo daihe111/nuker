@@ -159,22 +159,26 @@ export let renderMode: number = NukerRenderModes.TIME_SPLICING // 框架的渲�
 /**
  * nuker 框架渲染总入口方法
  * @param appContent 
+ * @param props 
  * @param container 
- * @param rm 
+ * @param options 
  */
 export function render(
   appContent: AppContent,
+  props: ChipProps,
   container: Element | string,
   options?: NukerRenderOptions
 ): Element {
-  const chip: Chip = createChip(appContent)
+  const chip: Chip = createChip(appContent, props)
+  // 为根组件节点挂载一个虚拟 fragment 容器，便于离屏渲染时多根节点的挂载
+  const domRoot: DocumentFragment = chip.elm = domOptions.createFragment()
   const chipRoot: ChipRoot = createChipRoot(chip)
 
   // 执行离屏渲染，渲染完成后将内存中的根节点挂载到指定的 dom 容器中
-  const root: Element = performRender(chipRoot, chip)
+  performRender(chipRoot, chip)
   container = isString(container) ? domOptions.getElementById(container) : container
   if (container) {
-    domOptions.appendChild(root, container)
+    domOptions.appendChild(domRoot, container)
   }
 
   // 首次挂载视图结束，执行框架初始化逻辑
@@ -226,7 +230,7 @@ export function render(
  * @param chipRoot 
  * @param chip 
  */
-export function performRender(chipRoot: ChipRoot, chip: Chip): Element {
+export function performRender(chipRoot: ChipRoot, chip: Chip): void {
   let pointer: ChipTraversePointer = {
     next: chip,
     phase: false
@@ -238,9 +242,6 @@ export function performRender(chipRoot: ChipRoot, chip: Chip): Element {
   // 批量执行当前渲染周期内缓存的所有 mounted 生命周期
   invokeLifecycle(LifecycleHooks.MOUNTED, chipRoot)
   chipRoot[LifecycleHooks.MOUNTED] = null
-
-  // chip 树已回溯至根节点，整颗 chip 树已完成离屏渲染，返回 chip 树对应的 dom 根节点
-  return chipRoot.root.elm
 }
 
 /**
@@ -323,10 +324,10 @@ export function completeRenderWork(
   const parent: Chip = chip.parent
   if (isLastChildOfChip(chip, parent)) {
     // 同级子节点已全部处理完毕，准备向父级回溯
-    return {
+    return parent ? {
       next: parent,
       phase: true
-    }
+    } : null
   } else {
     // 存在同级兄弟节点，继续深度遍历此兄弟节点
     const nextPosition: number = chip.position + 1

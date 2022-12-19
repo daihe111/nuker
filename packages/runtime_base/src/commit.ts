@@ -97,7 +97,7 @@ export function commitNewElement(tag: string): Element {
  * @param container 
  * @param props 
  */
-export function commitProps(container: Element, props: object): Element {
+export function commitProps(container: Element | DocumentFragment, props: object): Element | DocumentFragment {
   if (container && props) {
     for (const propName in props) {
       const value: symbol | any = props[propName]
@@ -125,10 +125,10 @@ export function commitProps(container: Element, props: object): Element {
  * @param anchorContainer 
  */
 export function commitMountMutation(
-  target: Element,
-  parentContainer: Element,
-  anchorContainer?: Element
-): Element {
+  target: Element | DocumentFragment,
+  parentContainer: Element | DocumentFragment,
+  anchorContainer?: Element | DocumentFragment
+): Element | DocumentFragment {
   if (target && parentContainer) {
     if (anchorContainer) {
       domOptions.insert(target, parentContainer, anchorContainer)
@@ -149,9 +149,9 @@ export function commitMountMutation(
  * @param context 
  */
 export function commitUnmountMutation(
-  target: Element,
-  parentContainer: Element
-): Element {
+  target: Element | DocumentFragment,
+  parentContainer: Element | DocumentFragment
+): Element | DocumentFragment {
   if (parentContainer && target) {
     domOptions.remove(target, parentContainer)
     return target
@@ -167,9 +167,9 @@ export function commitUnmountMutation(
  * @param anchor 
  */
 export function commitMoveMutation(
-  target: Element,
-  parentContainer: Element,
-  anchor: Element
+  target: Element | DocumentFragment,
+  parentContainer: Element | DocumentFragment,
+  anchor: Element | DocumentFragment
 ) {
   if (target && parentContainer) {
     const clone: Element = domOptions.cloneNode(target)

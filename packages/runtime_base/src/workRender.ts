@@ -66,8 +66,8 @@ export interface NukerRenderOptions {
 export interface RenderPayloadNode {
   // data
   action: number
-  container?: Element
-  parentContainer?: Element
+  container?: Element | DocumentFragment
+  parentContainer?: Element | DocumentFragment
   tag?: string
   props?: Record<string | number | symbol, any>
 
@@ -430,7 +430,7 @@ export function initRenderWorkForIterableChip(chip: Chip, chipRoot: ChipRoot): v
  */
 export function completeRenderWorkForElement(chip: Chip, chipRoot: ChipRoot): void {
   // 将当前 chip 对应的实体 dom 元素插入父 dom 容器
-  const parentElm: Element = chip.parent?.elm
+  const parentElm: Element | DocumentFragment = chip.parent?.elm
   const elm = chip.elm
   if (parentElm && elm) {
     domOptions.appendChild(elm, parentElm)
@@ -507,7 +507,7 @@ export function completeRenderWorkForChip(chipRoot: ChipRoot, chip: Chip): void 
  * 挂载距离当前节点最近的子代 dom 元素
  * @param chip 
  */
-export function mountElementForChip(chip: Chip): Element {
+export function mountElementForChip(chip: Chip): Element | DocumentFragment {
   let node: Chip = chip
   while (node) {
     if (node?.elm) {
@@ -812,8 +812,8 @@ export function createRenderPayloadNode(
   action: number,
   tag: string,
   props: Record<string | number | symbol, any>,
-  container: Element,
-  parentContainer: Element,
+  container: Element | DocumentFragment,
+  parentContainer: Element | DocumentFragment,
   context: Chip,
   parentContext?: Chip,
   anchorContext?: Chip,

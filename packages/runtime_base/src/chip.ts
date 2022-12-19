@@ -119,10 +119,6 @@ export interface Chip extends ChipCore {
 export interface ChipRoot {
   // chip 根节点
   root: Chip
-  // reconcile & commit 阶段产生的闲时任务队列
-  idleJobs: ListAccessor<IdleJobUnit> | void
-  // 渲染描述载荷队列
-  renderPayloads: ListAccessor<RenderPayloadNode>
 
   // 改变视图生命周期的缓存队列
   [LifecycleHooks.MOUNTED]?: ListAccessor<LifecycleUnit>
@@ -202,8 +198,6 @@ export function isLastChildOfChip(target: Chip, chip: Chip): boolean {
 export function createChipRoot(root: Chip): ChipRoot {
   return {
     root,
-    idleJobs: null,
-    renderPayloads: null,
     // 改变视图生命周期的缓存队列
     [LifecycleHooks.MOUNTED]: null,
     [LifecycleHooks.UPDATED]: null

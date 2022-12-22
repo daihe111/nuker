@@ -10,7 +10,25 @@ import { VirtualInstance, VirtualOptions } from "./virtualChip";
 import { ListAccessor } from "../../share/src/shareTypes";
 import { LifecycleHooks } from "./lifecycle";
 
-export type ChipTag = | string | Component | VirtualOptions
+export type ChipTag =
+  | string
+  | Component
+  | VirtualOptions
+
+// 每个 chip 只能对应一个 chipType，但有些 chip 可能命中多种类型，为了便于
+// 做 map 映射匹配，因此我们把一些组合类型作为单独的枚举列出
+// 如某些情况下我们不知道组件的明确类型，就可以使用 COMPONENT 这个组合类型，
+// 表示 chip 可能为 CLASS_COMPONENT or FUNCTIONAL_COMPONENT or OPTION_COMPONENT
+export const enum ChipTypeFlags {
+  ELEMENT = 1,
+  FUNCTIONAL_COMPONENT = 1 << 1,
+  CLASS_COMPONENT = 1 << 2,
+  OPTION_COMPONENT = 1 << 3,
+  CONDITION = 1 << 4,
+  ITERABLE = 1 << 5,
+  FRAGMENT = 1 << 6,
+  COMPONENT = ChipTypeFlags.CLASS_COMPONENT | ChipTypeFlags.FUNCTIONAL_COMPONENT | ChipTypeFlags.OPTION_COMPONENT
+}
 
 // 动态属性取值器
 export interface DynamicValueGetter {
@@ -42,22 +60,6 @@ export interface ChipCore {
   is?: boolean
   children?: ChipChildren
   parent?: Chip
-}
-
-export const enum ChipTypes {
-  INVALID_NODE = -1,
-  NATIVE_DOM = 0,
-  RESERVED_COMPONENT = 1,
-  CUSTOM_COMPONENT = 2,
-  CONDITION = 3,
-  FRAGMENT = 4
-}
-
-export const ChipTypeNames = {
-  [ChipTypes.INVALID_NODE]: 'INVALID_NODE',
-  [ChipTypes.NATIVE_DOM]: 'NATIVE_DOM',
-  [ChipTypes.RESERVED_COMPONENT]: 'RESERVED_COMPONENT',
-  [ChipTypes.CUSTOM_COMPONENT]: 'CUSTOM_COMPONENT'
 }
 
 export type ChipInstance = ComponentInstance | VirtualInstance
@@ -127,21 +129,6 @@ export interface ChipRoot {
 
 let id = 0
 
-export function parseChipType(tag: ChipTag): number {
-  if (typeof tag === 'string') {
-    if (isReservedTag(tag)) {
-      return ChipTypes.NATIVE_DOM
-    }
-    return ChipTypes.INVALID_NODE
-  } else if (typeof tag === 'object') {
-    if (isReservedComponentTag(tag)) {
-      return ChipTypes.RESERVED_COMPONENT
-    }
-    return ChipTypes.CUSTOM_COMPONENT
-  }
-  return ChipTypes.INVALID_NODE
-}
-
 export function cloneChip(chip: Chip, props: object, children: ChipChildren): Chip {
   return {
     [ChipFlags.IS_CHIP]: true,
@@ -204,12 +191,20 @@ export function createChipRoot(root: Chip): ChipRoot {
   }
 }
 
+/**
+ * 创建虚拟节点
+ * chipType 为节点类型，在预编译阶段或动态创建 chip 时可分析出对应的值
+ * @param tag 
+ * @param props 
+ * @param children 
+ * @param chipType 
+ */
 export function createChip(
   tag: ChipTag,
-  props?: ChipProps,
-  children?: ChipChildren
+  props: ChipProps,
+  children: ChipChildren,
+  chipType: number
 ): Chip {
-  const chipType = parseChipType(tag)
   return {
     [ChipFlags.IS_CHIP]: true,
     id: id++,

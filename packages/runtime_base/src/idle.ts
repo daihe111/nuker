@@ -9,7 +9,7 @@
  * reconcile tasks -> commit -> idle 需要作为一个整体任务注册进调度系统
  */
 
-import { Chip, ChipProps, ChipChildren, IdleJobUnit, ChipRoot, ChipEffectUnit, ChipTypes } from "./chip";
+import { Chip, ChipProps, ChipChildren, IdleJobUnit, ChipRoot, ChipEffectUnit, ChipTypeFlags } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend, isArray, addNodeToList } from "../../share/src";
 import { LifecycleHooks } from "./lifecycle";
@@ -49,7 +49,9 @@ export function updateChipContext(
   props: ChipProps,
   children: ChipChildren
 ): Chip {
-  if (chip.chipType === ChipTypes.CUSTOM_COMPONENT) {
+  if (
+    chip.chipType & ChipTypeFlags.COMPONENT
+  ) {
     // 组件类型的 chip 由于子代节点可能变化，因此需要更新子代节点的引用
     updateRefs(chip)
   }

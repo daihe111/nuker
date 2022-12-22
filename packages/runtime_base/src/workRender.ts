@@ -2,7 +2,6 @@ import {
   Chip,
   ChipRoot,
   ChipChildren,
-  ChipTypes,
   ChipProps,
   getLastChipChild,
   DynamicValueGetter,
@@ -13,7 +12,8 @@ import {
   isSameChip,
   ChipKey,
   IdleJobUnit,
-  isLastChildOfChip
+  isLastChildOfChip,
+  ChipTypeFlags
 } from "./chip";
 import { isArray, isFunction, createEmptyObject, extend, isString, isNumber, EMPTY_OBJ, deleteProperty, hasOwn, NOOP, createListAccessor } from "../../share/src";
 import {
@@ -116,36 +116,50 @@ export const enum NukerRenderModes {
 }
 
 export const renderInstrumentations = {
-  // 原生节点
-  [ChipTypes.NATIVE_DOM]: {
+  // 原生 dom 节点
+  [ChipTypeFlags.ELEMENT]: {
     onInitRender: initRenderWorkForElement,
     onCompleteRender: completeRenderWorkForElement,
     onInitReconcile: initReconcileForElement,
     onCompleteReconcile: NOOP
   },
   // 自定义组件
-  [ChipTypes.CUSTOM_COMPONENT]: {
+  [ChipTypeFlags.COMPONENT]: {
     onInitRender: initRenderWorkForComponent,
     onCompleteRender: completeRenderWorkForComponent,
     onInitReconcile: initReconcileForComponent,
     onCompleteReconcile: completeReconcileForComponent
   },
-  // 内部组件
-  [ChipTypes.RESERVED_COMPONENT]: {
+  // 函数式组件
+  [ChipTypeFlags.FUNCTIONAL_COMPONENT]: {
+    onInitRender: initRenderWorkForComponent,
+    onCompleteRender: completeRenderWorkForComponent,
+    onInitReconcile: initReconcileForComponent,
+    onCompleteReconcile: completeReconcileForComponent
+  },
+  // 类组件
+  [ChipTypeFlags.CLASS_COMPONENT]: {
+    onInitRender: initRenderWorkForComponent,
+    onCompleteRender: completeRenderWorkForComponent,
+    onInitReconcile: initReconcileForComponent,
+    onCompleteReconcile: completeReconcileForComponent
+  },
+  // option 组件
+  [ChipTypeFlags.OPTION_COMPONENT]: {
     onInitRender: initRenderWorkForComponent,
     onCompleteRender: completeRenderWorkForComponent,
     onInitReconcile: initReconcileForComponent,
     onCompleteReconcile: completeReconcileForComponent
   },
   // 条件虚拟容器节点
-  [ChipTypes.CONDITION]: {
+  [ChipTypeFlags.CONDITION]: {
     onInitRender: initRenderWorkForConditionChip,
     onCompleteRender: completeRenderWorkForConditionChip,
     onInitReconcile: initConditionChip,
     onCompleteReconcile: NOOP
   },
   // 可迭代虚拟容器节点
-  [ChipTypes.FRAGMENT]: {
+  [ChipTypeFlags.ITERABLE]: {
     onInitRender: initRenderWorkForIterableChip,
     onCompleteRender: completeRenderWorkForIterableChip,
     onInitReconcile: initIterableChip,
@@ -169,7 +183,12 @@ export function render(
   container: Element | string,
   options?: NukerRenderOptions
 ): Element {
-  const chip: Chip = createChip(appContent, props)
+  const chip: Chip = createChip(
+    appContent,
+    props,
+    null,
+    ChipTypeFlags.COMPONENT
+  )
   // 为根组件节点挂载一个虚拟 fragment 容器，便于离屏渲染时多根节点的挂载
   const domRoot: DocumentFragment = chip.elm = domOptions.createFragment()
   const chipRoot: ChipRoot = createChipRoot(chip)
@@ -478,31 +497,6 @@ export function completeRenderWorkForComponent(chip: Chip, chipRoot: ChipRoot): 
 }
 
 /**
- * 完成 chip 节点的渲染工作: 将 chip 挂载到 dom 视图上 (仅进行内存级别的 dom 操作)
- * @param chipRoot 
- * @param chip 
- */
-export function completeRenderWorkForChip(chipRoot: ChipRoot, chip: Chip): void {
-  switch (chip.chipType) {
-    case ChipTypes.NATIVE_DOM:
-      completeRenderWorkForElement(chip, chipRoot)
-      break
-    // 带虚拟容器的 chip 节点: component / virtual chip
-    case ChipTypes.CUSTOM_COMPONENT:
-      completeRenderWorkForComponent(chip, chipRoot)
-      break
-    case ChipTypes.CONDITION:
-      completeRenderWorkForConditionChip(chip, chipRoot)
-    case ChipTypes.FRAGMENT:
-      completeRenderWorkForIterableChip(chip, chipRoot)
-      break
-    default:
-      // nuker doesn't have this node type, a bug maybe occurred
-      break
-  }
-}
-
-/**
  * 为虚拟容器类型的 chip 挂载相匹配的 dom 节点
  * 挂载距离当前节点最近的子代 dom 元素
  * @param chip 
@@ -767,7 +761,7 @@ export function performReconcileSync(
  */
 export function getAnchorChip(chip: Chip, parentChip: Chip): Chip {
   let anchor: Chip = parentChip.children[chip.position + 1]
-  while (anchor.chipType !== ChipTypes.NATIVE_DOM) {
+  while ((anchor.chipType & ChipTypeFlags.ELEMENT) === 0) {
     anchor = anchor.children[0]
   }
 
@@ -1005,8 +999,7 @@ export function initReconcile(
       renderInstrumentations[chip.chipType].onInitReconcile(
         chip,
         chipRoot,
-        renderPayloads,
-        idleJobs
+        renderPayloads
       )
 
       // 卸载当前 chip 对应的旧 chip (相似节点) 上的 effects，当前

@@ -29,11 +29,3 @@ export function createVirtualChipInstance(chip: Chip): VirtualInstance {
     refs: null
   }
 }
-
-/**
- * 获取虚拟容器节点的子代节点
- * @param chip 
- */
-export function getVirtualChildren(chip: Chip): ChipChildren  {
-  return (chip.instance as VirtualInstance).render()
-}

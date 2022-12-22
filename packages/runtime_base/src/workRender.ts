@@ -23,7 +23,7 @@ import { ComponentInstance, Component, createComponentInstance, mountComponentCh
 import { domOptions } from "./domOptions";
 import { effect, disableCollecting, enableCollecting, Effect } from "../../reactivity/src/effect";
 import { performCommitWork, commitProps, PROP_TO_DELETE } from "./commit";
-import { createVirtualChipInstance, VirtualInstance, VirtualChipRender, getVirtualChildren } from "./virtualChip";
+import { createVirtualChipInstance, VirtualInstance, VirtualChipRender } from "./virtualChip";
 import { CompileFlags } from "./compileFlags";
 import { pushRenderEffectToBuffer, RenderEffectTypes, initRenderEffectBuffer } from "./renderEffectBuffer";
 import {

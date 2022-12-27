@@ -25,7 +25,7 @@ export const enum ChipTypeFlags {
   CLASS_COMPONENT = 1 << 2,
   OPTION_COMPONENT = 1 << 3,
   CONDITION = 1 << 4,
-  ITERABLE = 1 << 5,
+  ITERATOR = 1 << 5,
   FRAGMENT = 1 << 6,
   COMPONENT = ChipTypeFlags.CLASS_COMPONENT | ChipTypeFlags.FUNCTIONAL_COMPONENT | ChipTypeFlags.OPTION_COMPONENT
 }
@@ -180,15 +180,6 @@ export function getLastChipChild(children: ChipChildren): Chip {
 export function isLastChildOfChip(target: Chip, chip: Chip): boolean {
   const children: ChipChildren = chip.children
   return target === children[children.length - 1]
-}
-
-export function createChipRoot(root: Chip): ChipRoot {
-  return {
-    root,
-    // 改变视图生命周期的缓存队列
-    [LifecycleHooks.MOUNTED]: null,
-    [LifecycleHooks.UPDATED]: null
-  }
 }
 
 /**

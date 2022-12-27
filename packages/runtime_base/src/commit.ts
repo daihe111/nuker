@@ -8,7 +8,7 @@ export const PROP_TO_DELETE = Symbol()
 /**
  * payload 链表节点在 reconcile 阶段按照由子到父的顺序插入，commit 时
  * 按照先后顺序执行 payload 节点，即可保证 commit 的执行顺序与 reconcile 一致
- * @param chipRoot 
+ * @param renderPayloads 
  */
 export function performCommitWork(renderPayloads: RenderPayloadNode): null {
   let currentPayload = renderPayloads

@@ -9,7 +9,7 @@
  * reconcile tasks -> commit -> idle 需要作为一个整体任务注册进调度系统
  */
 
-import { Chip, ChipProps, ChipChildren, IdleJobUnit, ChipRoot, ChipEffectUnit, ChipTypeFlags } from "./chip";
+import { Chip, ChipProps, ChipChildren, IdleJobUnit, ChipEffectUnit, ChipTypeFlags } from "./chip";
 import { teardownEffect } from "../../reactivity/src/effect";
 import { extend, isArray, addNodeToList } from "../../share/src";
 import { LifecycleHooks } from "./lifecycle";
@@ -18,9 +18,9 @@ import { unregisterJob } from "./scheduler";
 
 /**
  * 执行闲时任务，每次执行时队列中的任务会收敛为一个不可打断的同步任务
- * @param chipRoot 
+ * @param idleJobs 
  */
-export function performIdleWork(idleJobs: IdleJobUnit, ): void {
+export function performIdleWork(idleJobs: IdleJobUnit): void {
   flushIdle(idleJobs)
 }
 
@@ -76,35 +76,16 @@ function createIdleNode(job: Function): IdleJobUnit {
 /**
  * 将闲时任务缓存至闲时任务队列
  * @param job 
- * @param chipRoot 
+ * @param idleJobs 
  */
 export function cacheIdleJob(job: Function, idleJobs: ListAccessor<IdleJobUnit>): Function {
   addNodeToList(idleJobs, createIdleNode(job))
   return job
 }
 
-function clearChipCacheByKey(chipRoot: ChipRoot, key: string): void {
-  chipRoot[key] = null
-}
-
-/**
- * 卸载 chip 根节点上的全局渲染缓存信息
- * @param chipRoot 
- */
-export function teardownChipCache(chipRoot: ChipRoot): void {
-  ([
-    'reconcileIdleJobs',
-    'renderPayloads',
-    LifecycleHooks.MOUNTED,
-    LifecycleHooks.UPDATED
-  ] as const).forEach(key => {
-    clearChipCacheByKey(chipRoot, key)
-  })
-}
-
 /**
  * 批量卸载 effect
- * @param chipRoot 
+ * @param chip
  */
 export function teardownAbandonedEffects(chip: Chip): void {
   const effects = chip.effects

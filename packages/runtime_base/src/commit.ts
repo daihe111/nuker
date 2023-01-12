@@ -1,4 +1,4 @@
-import { RenderPayloadNode, RenderUpdateTypes } from "./workRender";
+import { RenderPayloadNode, RenderActions } from "./workRender";
 import { domOptions } from "./domOptions";
 import { isFunction } from "../../share/src";
 
@@ -46,35 +46,35 @@ export function commitRenderPayload({
 }: RenderPayloadNode): void {
   const elm = container || context.elm
 
-  if (action & RenderUpdateTypes.PATCH_PROP) {
+  if (action & RenderActions.PATCH_PROP) {
     // commit 属性到 dom
     commitProps(elm, props)
   }
 
-  if (action & RenderUpdateTypes.MOUNT) {
+  if (action & RenderActions.MOUNT) {
     commitMountMutation(
       elm,
       parentContainer || parentContext.elm,
-      anchorContext.elm
+      anchorContext && (anchorContext.anchor || anchorContext.elm)
     )
   }
 
-  if (action & RenderUpdateTypes.UNMOUNT) {
+  if (action & RenderActions.UNMOUNT) {
     commitUnmountMutation(
       elm,
       domOptions.parentNode(elm)
     )
   }
 
-  if (action & RenderUpdateTypes.MOVE) {
+  if (action & RenderActions.MOVE) {
     commitMoveMutation(
       elm,
       parentContainer || parentContext.elm,
-      anchorContext.elm
+      anchorContext && (anchorContext.anchor || anchorContext.elm)
     )
   }
 
-  if (action & RenderUpdateTypes.CREATE_ELEMENT) {
+  if (action & RenderActions.CREATE_ELEMENT) {
     commitNewElement(tag)
   }
 

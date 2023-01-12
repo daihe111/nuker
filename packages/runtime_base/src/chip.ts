@@ -93,6 +93,7 @@ export interface Chip extends ChipCore {
   ref: ChipRef
   key?: ChipKey
   elm: Element | DocumentFragment // 虚拟节点对应的实际 dom 容器，继承父节点容器
+  anchor?: Element // 用于前一节点定位的实体锚点，虚拟容器节点的锚点为第一个子节点，是一个空 dom 节点
   move?: true // 节点是否需要移动
   instance: ChipInstance
   directives?: unknown

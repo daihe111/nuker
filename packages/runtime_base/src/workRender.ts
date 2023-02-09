@@ -153,14 +153,14 @@ export const renderInstrumentations = {
   [ChipTypeFlags.CONDITION]: {
     onInitRender: initRenderWorkForConditionChip,
     onCompleteRender: completeRenderWorkForConditionChip,
-    onInitReconcile: initConditionChip,
+    onInitReconcile: initReconcileForConditionChip,
     onCompleteReconcile: NOOP
   },
   // 可迭代虚拟容器节点
   [ChipTypeFlags.ITERATOR]: {
     onInitRender: initRenderWorkForIteratorChip,
     onCompleteRender: completeRenderWorkForIteratorChip,
-    onInitReconcile: initIteratorChip,
+    onInitReconcile: initReconcileForIteratorChip,
     onCompleteReconcile: NOOP
   }
 }
@@ -387,7 +387,7 @@ export function initRenderWorkForReservedComponent(chip: Chip): void {
  */
 export function initRenderWorkForElement(chip: Chip): void {
   const { tag, isSVG, is } = chip
-  chip.elm = domOptions.createElement(tag, isSVG, is)
+  chip.elm = domOptions.createElement((tag as string), isSVG, is)
 }
 
 /**
@@ -402,8 +402,8 @@ export function initRenderWorkForConditionChip(chip: Chip): void {
   // 继承实体 dom 元素
   const parent: Chip = chip.parent
   chip.elm = parent?.elm
-
-  initConditionChip(chip)
+  const { render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
+  createRenderEffectForConditionChip(chip, render)
 }
 
 /**
@@ -423,8 +423,11 @@ export function initRenderWorkForIteratorChip(chip: Chip): void {
   // 继承实体 dom 元素
   const parent: Chip = chip.parent
   chip.elm = parent?.elm
-
-  initIteratorChip(chip)
+  const {
+    sourceGetter, // 数据源 getter，数据源本身可能为根级响应式数据，也可能为其他响应式数据源的子级数据
+    render // 模板渲染器
+  } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
+  createRenderEffectForIteratorChip(chip, render, sourceGetter)
 }
 
 /**
@@ -457,11 +460,11 @@ export function completeRenderWorkForElement(chip: Chip): void {
 }
 
 export function completeRenderWorkForIteratorChip(chip: Chip): void {
-  mountElementForChip(chip)
+  mountAnchorForChip(chip)
 }
 
 export function completeRenderWorkForConditionChip(chip: Chip): void {
-  mountElementForChip(chip)
+  mountAnchorForChip(chip)
 }
 
 /**
@@ -469,26 +472,16 @@ export function completeRenderWorkForConditionChip(chip: Chip): void {
  * @param chip 
  */
 export function completeRenderWorkForComponent(chip: Chip): void {
-  mountElementForChip(chip)
+  mountAnchorForChip(chip)
 }
 
 /**
- * 为虚拟容器类型的 chip 挂载相匹配的 dom 节点
- * 挂载距离当前节点最近的子代 dom 元素
+ * 为虚拟容器类型的 chip 挂载定位锚点
  * @param chip 
  */
-export function mountElementForChip(chip: Chip): Element | DocumentFragment {
-  let node: Chip = chip
-  while (node) {
-    if (node?.elm) {
-      return node.elm
-    }
-
-    const children: ChipChildren = node.children
-    node = children && children[children.length - 1]
-  }
-
-  return null
+export function mountAnchorForChip(chip: Chip): void {
+  chip.anchor = domOptions.createElement('div')
+  domOptions.appendChild(chip.anchor, chip.parent.elm)
 }
 
 /**
@@ -1013,30 +1006,6 @@ export function completeReconcile(
 }
 
 /**
- * 初始化条件 chip 节点
- * @param chip 
- */
-export function initConditionChip(chip: Chip): Chip {
-  const { render } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-  createRenderEffectForConditionChip(chip, render)
-  return chip
-}
-
-/**
- * 初始化可迭代 chip 节点
- * @param chip 
- */
-export function initIteratorChip(chip: Chip): Chip {
-  const {
-    sourceGetter, // 数据源 getter，数据源本身可能为根级响应式数据，也可能为其他响应式数据源的子级数据
-    render // 模板渲染器
-  } = (chip.instance as VirtualInstance) = createVirtualChipInstance(chip)
-  createRenderEffectForIteratorChip(chip, render, sourceGetter)
-
-  return chip
-}
-
-/**
  * 初始化原生 dom 节点的协调工作
  * @param chip 
  * @param renderPayloads
@@ -1075,21 +1044,49 @@ export function initReconcileForElement(
 export function initReconcileForComponent(chip: Chip): void {
   // 优先复用相同类型组件节点的 instance，节省内存，但 refs & props 需要更新，
   // 因为子代节点 & 外部属性都具有不确定性，因此需要使用最新的数据
-  chip.instance = chip.wormhole?.instance && createComponentInstance((chip.tag as Component), chip)
+  if (chip.wormhole) {
+    // 存在相似节点，复用旧节点数据
+    reuseVirtualChipState(chip, chip.wormhole)
+  } else {
+    // 无相似节点，创建全新的节点实例
+    chip.instance = createComponentInstance((chip.tag as Component), chip)
+  }
+
   disableCollecting()
   mountComponentChildren(chip)
   enableCollecting()
+}
 
+/**
+ * 初始化条件节点的协调工作
+ * @param chip 
+ */
+export function initReconcileForConditionChip(chip: Chip): void {
   if (chip.wormhole) {
-    // 组件节点存在配对的相似节点，说明组件会做更新，因此触发 willMount 生命周期
-    invokeLifecycle(LifecycleHooks.WILL_UPDATE, chip.instance)
+    reuseVirtualChipState(chip, chip.wormhole)
   } else {
-    // 无对应旧 chip 节点，表示当前 chip 为待挂载节点
-    // 触发 init 生命周期
-    invokeLifecycle(LifecycleHooks.INIT, chip.instance)
-    // 触发 willMount 生命周期
-    invokeLifecycle(LifecycleHooks.WILL_MOUNT, chip.instance)
+    chip.instance = createVirtualChipInstance(chip)
   }
+
+  createRenderEffectForConditionChip(chip, chip.instance.render)
+}
+
+/**
+ * 初始化可迭代节点的协调工作
+ * @param chip 
+ */
+export function initReconcileForIteratorChip(chip: Chip): void {
+  if (chip.wormhole) {
+    reuseVirtualChipState(chip, chip.wormhole)
+  } else {
+    chip.instance = createVirtualChipInstance(chip)
+  }
+
+  const {
+    sourceGetter, // 数据源 getter，数据源本身可能为根级响应式数据，也可能为其他响应式数据源的子级数据
+    render // 模板渲染器
+  } = chip.instance
+  createRenderEffectForIteratorChip(chip, render, sourceGetter)
 }
 
 /**
@@ -1298,7 +1295,6 @@ export function reconcileToGenRenderPayload(
   const { tag, props, wormhole } = chip
   if (wormhole) {
     // 有匹配的旧节点，且新旧 chip 节点一定是相似节点
-    let next: Chip
     cacheRenderPayload(
       chip.move ? createRenderPayloadNode(
         RenderActions.PATCH_PROP | RenderActions.MOVE, // 更新节点属性 & 将需要移动的节点移动到指定位置
@@ -1445,6 +1441,15 @@ export function cacheRenderPayload(
   } else {
     queue.last = queue.first = payload
   }
+}
+
+/**
+ * 复用旧 chip 节点上的数据
+ * @param chip 
+ */
+export function reuseVirtualChipState(chip: Chip, owner: Chip): void {
+  chip.instance = owner.instance
+  chip.anchor = owner.anchor
 }
 
 /**

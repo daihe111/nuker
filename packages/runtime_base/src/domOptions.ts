@@ -55,7 +55,7 @@ export const domOptions = {
     }
   },
 
-  createElement: (tag, isSVG, is, props?: Record<string, string>): Element => {
+  createElement: (tag: string, isSVG?: boolean, is?: string, props?: Record<string, string>): Element => {
     const el = isSVG
       ? doc.createElementNS(svgNS, tag)
       : doc.createElement(tag, is ? { is } : undefined)

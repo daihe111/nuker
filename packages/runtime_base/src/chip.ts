@@ -57,7 +57,7 @@ export interface ChipCore {
   chipType: number
   props: ChipProps
   isSVG?: boolean
-  is?: boolean
+  is?: string
   children?: ChipChildren
   parent?: Chip
 }

@@ -44,7 +44,12 @@ export function commitRenderPayload({
   anchorContext,
   callback
 }: RenderPayloadNode): void {
-  const elm = container || context.elm
+  // dom 操作的主体对象
+  let elm = container || context.elm
+
+  if (action & RenderActions.CREATE_ELEMENT) {
+    elm = commitNewElement(tag)
+  }
 
   if (action & RenderActions.PATCH_PROP) {
     // commit 属性到 dom
@@ -74,10 +79,6 @@ export function commitRenderPayload({
     )
   }
 
-  if (action & RenderActions.CREATE_ELEMENT) {
-    commitNewElement(tag)
-  }
-
   if (isFunction(callback)) {
     callback(context, elm)
   }
@@ -88,8 +89,7 @@ export function commitRenderPayload({
  * @param tag 
  */
 export function commitNewElement(tag: string): Element {
-  const isSVG = (tag === 'svg')
-  return domOptions.createElement(tag, isSVG, false)
+  return domOptions.createElement(tag, tag === 'svg')
 }
 
 /**

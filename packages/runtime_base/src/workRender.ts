@@ -748,10 +748,10 @@ export function cacheEffectToChip(effect: Effect, chip: Chip): Effect {
 export function createRenderPayloadNode(
   action: number,
   tag: string,
-  props: Record<string | number | symbol, any>,
-  container: Element | DocumentFragment,
-  parentContainer: Element | DocumentFragment,
-  context: Chip,
+  props?: Record<string | number | symbol, any>,
+  container?: Element | DocumentFragment,
+  parentContainer?: Element | DocumentFragment,
+  context?: Chip,
   parentContext?: Chip,
   anchorContext?: Chip,
   callback?: Function
@@ -1330,20 +1330,44 @@ export function reconcileToGenRenderPayload(
     // 已创建生成 dom 容器的 render payload，因此 bubble 阶段需要
     // 完成节点属性的 patch 、节点的挂载，这样才能完整将新的节点挂载
     // 到 dom 上
-    cacheRenderPayload(
-      createRenderPayloadNode(
-        // 更新节点属性 & 将节点挂载到指定位置
-        RenderActions.PATCH_PROP | RenderActions.MOUNT,
-        (tag as string),
-        props,
-        null,
-        null,
-        chip,
-        parentChip.wormhole || parentChip,
-        parentChip.children[chip.position + 1]
-      ),
-      renderPayloads
-    )
+    if (isString(tag)) {
+      // 原生节点，此节点需要挂载到视图上，非原生节点由于没有实体容器，因此
+      // 不需要操作视图
+      cacheRenderPayload(
+        createRenderPayloadNode(
+          // 更新节点属性 & 将节点挂载到指定位置
+          RenderActions.PATCH_PROP | RenderActions.MOUNT,
+          (tag as string),
+          props,
+          null,
+          null,
+          chip,
+          parentChip.wormhole || parentChip,
+          parentChip.children[chip.position + 1]
+        ),
+        renderPayloads
+      )
+    } else {
+      // 无实体节点的虚拟容器节点，最终不会体现到视图上，无需生成 render payload，
+      // 但需要生成用于定位的实体锚点
+      cacheRenderPayload(
+        createRenderPayloadNode(
+          RenderActions.CREATE_ELEMENT | RenderActions.MOUNT,
+          'div',
+          null,
+          null,
+          null,
+          chip,
+          parentChip,
+          chip.children?.[0] || parentChip.children[chip.position + 1], // anchor
+          (context: Chip, elm: Element) => {
+            // render payload 已 commit 到视图，将生成的锚点挂载到虚拟容器上下文上
+            context.anchor = elm
+          }
+        ),
+        renderPayloads
+      )
+    }
   }
 }
 
